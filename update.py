@@ -1,0 +1,124 @@
+#!/usr/bin/env python3
+"""Refresh every generated data file the site reads.
+
+  python update.py
+
+Steps:
+  1. Champions from Riot Data Dragon
+  2. LoLalytics counters, winrates, and synergies
+  3. Oracle's Elixir pro games
+  4. Player ratings from those games
+"""
+
+from __future__ import annotations
+
+import argparse
+import subprocess
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent
+SYNC = ROOT / "sync"
+CACHE = ROOT / "cache"
+PY = sys.executable
+
+
+def run(args: list[str], cwd: Path | None = None) -> None:
+    print("\n+", " ".join(args), flush=True)
+    subprocess.check_call(args, cwd=str(cwd or ROOT))
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="Refresh Whisper Draft data files.")
+    parser.add_argument("--skip-lolalytics", action="store_true")
+    parser.add_argument("--skip-oracles", action="store_true")
+    parser.add_argument("--skip-ratings", action="store_true")
+    parser.add_argument("--limit", type=int, default=0, help="Fetch only N champions (debug).")
+    parser.add_argument("--workers", type=int, default=2)
+    args = parser.parse_args()
+    CACHE.mkdir(parents=True, exist_ok=True)
+
+    run([PY, str(SYNC / "update_champions.py"), "--out", str(ROOT / "champions.js")])
+
+    if not args.skip_lolalytics:
+        counters_csv = CACHE / "champion_counters.csv"
+        synergies_csv = CACHE / "champion_synergies.csv"
+        extra = ["--limit", str(args.limit)] if args.limit else []
+        run(
+            [
+                PY,
+                str(SYNC / "fetch_counters.py"),
+                "--fresh",
+                "--workers",
+                str(args.workers),
+                "--out",
+                str(counters_csv),
+                *extra,
+            ]
+        )
+        run(
+            [
+                PY,
+                str(SYNC / "convert_counters.py"),
+                "--csv",
+                str(counters_csv),
+                "--champions",
+                str(ROOT / "champions.js"),
+                "--out",
+                str(ROOT / "counters.js"),
+            ]
+        )
+        run(
+            [
+                PY,
+                str(SYNC / "fetch_winrates.py"),
+                "--out",
+                str(CACHE / "champion_winrates.csv"),
+                "--site",
+                str(ROOT / "winrates.js"),
+                "--champions",
+                str(ROOT / "champions.js"),
+            ]
+        )
+        run(
+            [
+                PY,
+                str(SYNC / "fetch_synergies.py"),
+                "--fresh",
+                "--workers",
+                str(args.workers),
+                "--out",
+                str(synergies_csv),
+                *extra,
+            ]
+        )
+        run(
+            [
+                PY,
+                str(SYNC / "convert_synergies.py"),
+                "--csv",
+                str(synergies_csv),
+                "--champions",
+                str(ROOT / "champions.js"),
+                "--out",
+                str(ROOT / "synergies.js"),
+            ]
+        )
+
+    if not args.skip_oracles:
+        run([PY, str(ROOT / "sync_oracles.py"), "--cache", str(ROOT / "oracles.csv")])
+
+    if not args.skip_ratings:
+        csv_path = ROOT / "oracles.csv"
+        extra = ["--csv", str(csv_path)] if csv_path.exists() else []
+        run([PY, "-m", "ratings.score_players", *extra])
+
+    print("\nRefresh complete.")
+    return 0
+
+
+if __name__ == "__main__":
+    try:
+        raise SystemExit(main())
+    except subprocess.CalledProcessError as exc:
+        raise SystemExit(exc.returncode) from exc
