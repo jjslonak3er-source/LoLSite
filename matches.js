@@ -2,6 +2,23 @@ const DDRAGON = "https://ddragon.leagueoflegends.com";
 const LEAGUES = ["All", "LPL", "LCK", "LEC", "LCS"];
 const RECENT_DAYS = 60;
 const ROLE_KEYS = ["TOP", "JNG", "MID", "ADC", "SUP"];
+const ROLE_ALIASES = {
+  top: "TOP",
+  toplane: "TOP",
+  jng: "JNG",
+  jg: "JNG",
+  jungle: "JNG",
+  jungler: "JNG",
+  mid: "MID",
+  middle: "MID",
+  adc: "ADC",
+  bot: "ADC",
+  botlane: "ADC",
+  bottom: "ADC",
+  sup: "SUP",
+  supp: "SUP",
+  support: "SUP",
+};
 
 const els = {
   boot: document.getElementById("boot"),
@@ -9,10 +26,14 @@ const els = {
   app: document.getElementById("app"),
   title: document.getElementById("matches-title"),
   range: document.getElementById("matches-range"),
-  search: document.getElementById("matches-search"),
+  teams: document.getElementById("matches-teams"),
+  teamMenu: document.getElementById("matches-team-menu"),
   champs: document.getElementById("matches-champs"),
   champMenu: document.getElementById("matches-champ-menu"),
-  champChips: document.getElementById("matches-champ-chips"),
+  champRoles: document.getElementById("matches-champ-roles"),
+  players: document.getElementById("matches-players"),
+  playerMenu: document.getElementById("matches-player-menu"),
+  picks: document.getElementById("matches-picks"),
   leagues: document.getElementById("matches-leagues"),
   windows: document.getElementById("matches-windows"),
   patches: document.getElementById("matches-patches"),
@@ -21,11 +42,14 @@ const els = {
 };
 
 let bundle = { games: [] };
-let search = "";
 let league = "All";
 let windowKey = "recent";
 let gamePatch = "All";
+let teamFilters = [];
+let lastTeam = "";
 let champFilters = [];
+let champRole = "";
+let playerFilters = [];
 let patch = "";
 let champMap = new Map();
 const predictCache = {};
@@ -44,54 +68,8 @@ function champSlug(name) {
     .replace(/[^a-z0-9]/g, "");
 }
 
-function parseChamps(raw) {
-  if (!raw) return [];
-  return raw.split(",").map(function (part) {
-    return part.trim();
-  }).filter(function (id) {
-    return champMap.has(id);
-  });
-}
-
-function gameHasChamps(game) {
-  if (!champFilters.length) return true;
-  const pool = (game.b || []).concat(game.r || []);
-  for (let i = 0; i < champFilters.length; i += 1) {
-    if (pool.indexOf(champFilters[i]) === -1) return false;
-  }
-  return true;
-}
-
-function toggleChamp(id) {
-  if (!id || !champMap.has(id)) return;
-  const next = [];
-  let found = false;
-  for (let i = 0; i < champFilters.length; i += 1) {
-    if (champFilters[i] === id) found = true;
-    else next.push(champFilters[i]);
-  }
-  if (!found) next.push(id);
-  champFilters = next;
-}
-
-function searchChamps(q) {
-  const slug = champSlug(q);
-  if (!slug) return [];
-  const out = [];
-  champMap.forEach(function (champ, id) {
-    if (champFilters.indexOf(id) !== -1) return;
-    if (champSlug(id).indexOf(slug) === -1 && champSlug(champ.name).indexOf(slug) === -1) return;
-    out.push(id);
-  });
-  out.sort(function (a, b) {
-    const an = champSlug(champName(a));
-    const bn = champSlug(champName(b));
-    const as = an.indexOf(slug) === 0 ? 0 : 1;
-    const bs = bn.indexOf(slug) === 0 ? 0 : 1;
-    if (as !== bs) return as - bs;
-    return champName(a).localeCompare(champName(b));
-  });
-  return out.slice(0, 8);
+function playerKey(name) {
+  return (name || "").trim().toLowerCase();
 }
 
 function addDays(iso, days) {
@@ -120,8 +98,7 @@ function comparePatch(a, b) {
 function listPatches(games) {
   const seen = {};
   for (let i = 0; i < games.length; i += 1) {
-    const value = games[i].p;
-    if (value) seen[value] = true;
+    if (games[i].p) seen[games[i].p] = true;
   }
   return Object.keys(seen).sort(comparePatch).reverse();
 }
@@ -141,6 +118,39 @@ function chipRow(root, items, current, onPick) {
   }
 }
 
+function parseRole(raw) {
+  return ROLE_ALIASES[String(raw || "").toLowerCase().replace(/[^a-z]/g, "")] || "";
+}
+
+function parseChampQuery(raw) {
+  const parts = String(raw || "").trim().split(/\s+/).filter(Boolean);
+  let role = "";
+  const words = [];
+  for (let i = 0; i < parts.length; i += 1) {
+    const hit = parseRole(parts[i]);
+    if (hit) role = hit;
+    else words.push(parts[i]);
+  }
+  return { q: words.join(" "), role: role };
+}
+
+function parseChampSpecs(raw) {
+  if (!raw) return [];
+  return raw.split(",").map(function (part) {
+    const bits = part.split("::");
+    const id = (bits[0] || "").trim();
+    if (!champMap.has(id)) return null;
+    return { id: id, role: bits[1] || "", team: bits[2] || "" };
+  }).filter(Boolean);
+}
+
+function parseList(raw) {
+  if (!raw) return [];
+  return raw.split(",").map(function (part) {
+    return part.trim();
+  }).filter(Boolean);
+}
+
 function windowMatches() {
   const cutoff = cutoffDate();
   const rows = bundle.games || [];
@@ -154,21 +164,202 @@ function windowMatches() {
   return out;
 }
 
+function sideOfTeam(game, name) {
+  if (game.bt === name) return "b";
+  if (game.rt === name) return "r";
+  return "";
+}
+
+function sideChamps(game, side) {
+  return side === "b" ? game.b || [] : game.r || [];
+}
+
+function sidePlayers(game, side) {
+  return side === "b" ? game.bp || [] : game.rp || [];
+}
+
+function allPlayers(game) {
+  return (game.bp || []).concat(game.rp || []);
+}
+
+function champOnSide(game, side, spec) {
+  const champs = sideChamps(game, side);
+  if (!spec.role) return champs.indexOf(spec.id) !== -1;
+  const idx = ROLE_KEYS.indexOf(spec.role);
+  return idx >= 0 && champs[idx] === spec.id;
+}
+
+function gameHasChamp(game, spec) {
+  if (spec.team) {
+    const side = sideOfTeam(game, spec.team);
+    return !!(side && champOnSide(game, side, spec));
+  }
+  return champOnSide(game, "b", spec) || champOnSide(game, "r", spec);
+}
+
+function gameHasPlayer(game, name) {
+  const want = playerKey(name);
+  const names = allPlayers(game);
+  for (let i = 0; i < names.length; i += 1) {
+    if (playerKey(names[i]) === want) return true;
+  }
+  return false;
+}
+
+function listTeams() {
+  const seen = {};
+  const rows = windowMatches();
+  for (let i = 0; i < rows.length; i += 1) {
+    if (rows[i].bt) seen[rows[i].bt] = true;
+    if (rows[i].rt) seen[rows[i].rt] = true;
+  }
+  return Object.keys(seen).sort(function (a, b) {
+    return a.localeCompare(b);
+  });
+}
+
+function listPlayers() {
+  const seen = {};
+  const rows = windowMatches();
+  for (let i = 0; i < rows.length; i += 1) {
+    const names = allPlayers(rows[i]);
+    for (let n = 0; n < names.length; n += 1) {
+      if (names[n]) seen[names[n]] = true;
+    }
+  }
+  return Object.keys(seen).sort(function (a, b) {
+    return a.localeCompare(b);
+  });
+}
+
+function searchNames(all, q, selected, limit) {
+  const needle = q.trim().toLowerCase();
+  const out = [];
+  for (let i = 0; i < all.length; i += 1) {
+    const name = all[i];
+    if (selected.indexOf(name) !== -1) continue;
+    if (needle && name.toLowerCase().indexOf(needle) === -1) continue;
+    out.push(name);
+    if (out.length >= (limit || 12)) break;
+  }
+  return out;
+}
+
+function searchChamps(raw) {
+  const parsed = parseChampQuery(raw);
+  const slug = champSlug(parsed.q);
+  const out = [];
+  champMap.forEach(function (champ, id) {
+    if (!slug) return;
+    if (champSlug(id).indexOf(slug) === -1 && champSlug(champ.name).indexOf(slug) === -1) return;
+    out.push(id);
+  });
+  out.sort(function (a, b) {
+    const an = champSlug(champName(a));
+    const bn = champSlug(champName(b));
+    const as = an.indexOf(slug) === 0 ? 0 : 1;
+    const bs = bn.indexOf(slug) === 0 ? 0 : 1;
+    if (as !== bs) return as - bs;
+    return champName(a).localeCompare(champName(b));
+  });
+  return { ids: out.slice(0, 8), role: parsed.role };
+}
+
+function toggleTeam(name) {
+  if (!name) return;
+  const next = [];
+  let found = false;
+  for (let i = 0; i < teamFilters.length; i += 1) {
+    if (teamFilters[i] === name) found = true;
+    else next.push(teamFilters[i]);
+  }
+  if (!found) {
+    if (next.length >= 2) next[1] = name;
+    else next.push(name);
+    lastTeam = name;
+  } else {
+    champFilters = champFilters.map(function (spec) {
+      if (spec.team !== name) return spec;
+      return { id: spec.id, role: spec.role, team: next[next.length - 1] || "" };
+    });
+    if (lastTeam === name) lastTeam = next[next.length - 1] || "";
+  }
+  teamFilters = next;
+}
+
+function champIndex(id, team) {
+  for (let i = 0; i < champFilters.length; i += 1) {
+    if (champFilters[i].id === id && (champFilters[i].team || "") === (team || "")) return i;
+  }
+  return -1;
+}
+
+function toggleChamp(id, team, role) {
+  if (!id || !champMap.has(id)) return;
+  const assigned = team || "";
+  const idx = champIndex(id, assigned);
+  if (idx !== -1) {
+    champFilters.splice(idx, 1);
+    return;
+  }
+  champFilters.push({ id: id, role: role || "", team: assigned });
+}
+
+function cycleChampRole(index) {
+  const spec = champFilters[index];
+  if (!spec) return;
+  const cur = ROLE_KEYS.indexOf(spec.role);
+  spec.role = cur === ROLE_KEYS.length - 1 ? "" : ROLE_KEYS[cur + 1] || ROLE_KEYS[0];
+}
+
+function cycleChampTeam(index) {
+  const spec = champFilters[index];
+  if (!spec || !teamFilters.length) return;
+  const cur = teamFilters.indexOf(spec.team);
+  spec.team = cur === teamFilters.length - 1 ? "" : teamFilters[cur + 1] || teamFilters[0];
+}
+
+function togglePlayer(name) {
+  if (!name) return;
+  const key = playerKey(name);
+  const next = [];
+  let found = false;
+  for (let i = 0; i < playerFilters.length; i += 1) {
+    if (playerKey(playerFilters[i]) === key) found = true;
+    else next.push(playerFilters[i]);
+  }
+  if (!found) next.push(name);
+  playerFilters = next;
+}
+
 function listMatches() {
-  const q = search.trim().toLowerCase();
   const rows = windowMatches();
   const out = [];
   for (let i = 0; i < rows.length; i += 1) {
     const game = rows[i];
     if (gamePatch !== "All" && game.p !== gamePatch) continue;
-    if (
-      q &&
-      (game.bt || "").toLowerCase().indexOf(q) === -1 &&
-      (game.rt || "").toLowerCase().indexOf(q) === -1
-    ) {
-      continue;
+    if (teamFilters.length === 1 && !sideOfTeam(game, teamFilters[0])) continue;
+    if (teamFilters.length === 2) {
+      const a = sideOfTeam(game, teamFilters[0]);
+      const b = sideOfTeam(game, teamFilters[1]);
+      if (!a || !b || a === b) continue;
     }
-    if (!gameHasChamps(game)) continue;
+    let champsOk = true;
+    for (let c = 0; c < champFilters.length; c += 1) {
+      if (!gameHasChamp(game, champFilters[c])) {
+        champsOk = false;
+        break;
+      }
+    }
+    if (!champsOk) continue;
+    let playersOk = true;
+    for (let p = 0; p < playerFilters.length; p += 1) {
+      if (!gameHasPlayer(game, playerFilters[p])) {
+        playersOk = false;
+        break;
+      }
+    }
+    if (!playersOk) continue;
     out.push(game);
   }
   return out;
@@ -222,6 +413,10 @@ function renderAcc(rows) {
   els.acc.className = "matches-acc " + (pct >= 50 ? "wr-up" : "wr-down");
 }
 
+function champActive(id, team) {
+  return champIndex(id, team) !== -1 || champIndex(id, "") !== -1;
+}
+
 function champCell(ids, team, win) {
   const td = document.createElement("td");
   const wrap = document.createElement("div");
@@ -229,6 +424,12 @@ function champCell(ids, team, win) {
   const name = document.createElement("span");
   name.className = "match-side-name";
   name.textContent = team || "—";
+  name.title = "Filter " + (team || "team");
+  name.addEventListener("click", function (event) {
+    event.stopPropagation();
+    toggleTeam(team);
+    render();
+  });
   const icons = document.createElement("div");
   icons.className = "match-icons";
   for (let i = 0; i < 5; i += 1) {
@@ -237,10 +438,11 @@ function champCell(ids, team, win) {
     const img = document.createElement("img");
     img.src = portrait(id);
     img.alt = champName(id);
-    img.title = champName(id);
-    if (champFilters.indexOf(id) !== -1) img.className = "active";
+    img.title = champName(id) + (team ? " · " + team : "") + " · " + ROLE_KEYS[i];
+    if (champActive(id, team)) img.className = "active";
     img.addEventListener("click", function (event) {
       event.stopPropagation();
+      if (team && teamFilters.indexOf(team) === -1 && teamFilters.length < 2) toggleTeam(team);
       toggleChamp(id);
       render();
     });
@@ -249,6 +451,192 @@ function champCell(ids, team, win) {
   wrap.append(name, icons);
   td.append(wrap);
   return td;
+}
+
+function hideMenu(menu) {
+  if (!menu) return;
+  menu.hidden = true;
+  menu.innerHTML = "";
+}
+
+function fillMenu(menu, items, renderItem, onPick) {
+  menu.innerHTML = "";
+  if (!items.length) {
+    menu.hidden = true;
+    return;
+  }
+  for (let i = 0; i < items.length; i += 1) {
+    const item = items[i];
+    const button = document.createElement("button");
+    button.type = "button";
+    renderItem(button, item);
+    button.addEventListener("mousedown", function (event) {
+      event.preventDefault();
+    });
+    button.addEventListener("click", function () {
+      onPick(item);
+    });
+    menu.append(button);
+  }
+  menu.hidden = false;
+}
+
+function bindCombo(input, menu, renderMenu, onEnter) {
+  if (!input || !menu) return;
+  input.addEventListener("input", renderMenu);
+  input.addEventListener("focus", renderMenu);
+  input.addEventListener("blur", function () {
+    setTimeout(function () {
+      hideMenu(menu);
+    }, 120);
+  });
+  input.addEventListener("keydown", function (event) {
+    if (event.key === "Escape") {
+      input.value = "";
+      hideMenu(menu);
+      return;
+    }
+    if (event.key !== "Enter") return;
+    event.preventDefault();
+    onEnter();
+  });
+}
+
+function renderTeamMenu() {
+  fillMenu(
+    els.teamMenu,
+    searchNames(listTeams(), els.teams.value, teamFilters, 12),
+    function (button, name) {
+      button.textContent = name;
+    },
+    function (name) {
+      toggleTeam(name);
+      els.teams.value = "";
+      hideMenu(els.teamMenu);
+      render();
+    }
+  );
+}
+
+function renderChampMenu() {
+  const hits = searchChamps(els.champs.value);
+  fillMenu(
+    els.champMenu,
+    hits.ids,
+    function (button, id) {
+      const img = document.createElement("img");
+      img.src = portrait(id);
+      img.alt = "";
+      const label = champName(id) + (hits.role ? " · " + hits.role : "");
+      button.append(img, document.createTextNode(label));
+    },
+    function (id) {
+      toggleChamp(id, "", hits.role || champRole);
+      els.champs.value = "";
+      hideMenu(els.champMenu);
+      render();
+    }
+  );
+}
+
+function renderPlayerMenu() {
+  fillMenu(
+    els.playerMenu,
+    searchNames(listPlayers(), els.players.value, playerFilters, 12),
+    function (button, name) {
+      button.textContent = name;
+    },
+    function (name) {
+      togglePlayer(name);
+      els.players.value = "";
+      hideMenu(els.playerMenu);
+      render();
+    }
+  );
+}
+
+function shortTeam(name) {
+  if (!name) return "";
+  const parts = name.split(/\s+/);
+  if (name.length <= 14) return name;
+  return parts.map(function (part) {
+    return part[0];
+  }).join("").toUpperCase() || name;
+}
+
+function renderPicks() {
+  if (!els.picks) return;
+  els.picks.innerHTML = "";
+  const has = teamFilters.length || champFilters.length || playerFilters.length;
+  els.picks.hidden = !has;
+  for (let i = 0; i < teamFilters.length; i += 1) {
+    if (i === 1) {
+      const vs = document.createElement("span");
+      vs.className = "chip-vs";
+      vs.textContent = "vs";
+      els.picks.append(vs);
+    }
+    const name = teamFilters[i];
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "active";
+    button.textContent = name;
+    button.addEventListener("click", function () {
+      toggleTeam(name);
+      render();
+    });
+    els.picks.append(button);
+  }
+  for (let i = 0; i < champFilters.length; i += 1) {
+    const spec = champFilters[i];
+    const idx = i;
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "active";
+    const img = document.createElement("img");
+    img.src = portrait(spec.id);
+    img.alt = "";
+    button.append(img, document.createTextNode(champName(spec.id)));
+    if (spec.team || teamFilters.length) {
+      const teamBtn = document.createElement("span");
+      teamBtn.className = "chip-team";
+      teamBtn.textContent = spec.team ? shortTeam(spec.team) : "any";
+      teamBtn.title = spec.team || "Any team";
+      teamBtn.addEventListener("click", function (event) {
+        event.stopPropagation();
+        cycleChampTeam(idx);
+        render();
+      });
+      button.append(teamBtn);
+    }
+    const roleBtn = document.createElement("span");
+    roleBtn.className = "chip-role";
+    roleBtn.textContent = spec.role || "any";
+    roleBtn.title = "Cycle role";
+    roleBtn.addEventListener("click", function (event) {
+      event.stopPropagation();
+      cycleChampRole(idx);
+      render();
+    });
+    button.append(roleBtn);
+    button.addEventListener("click", function () {
+      champFilters.splice(idx, 1);
+      render();
+    });
+    els.picks.append(button);
+  }
+  for (let i = 0; i < playerFilters.length; i += 1) {
+    const name = playerFilters[i];
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "active";
+    button.textContent = name;
+    button.addEventListener("click", function () {
+      togglePlayer(name);
+      render();
+    });
+    els.picks.append(button);
+  }
 }
 
 function render() {
@@ -280,7 +668,11 @@ function render() {
     gamePatch = name;
     render();
   });
-  renderChampChips();
+  chipRow(els.champRoles, ["Any role"].concat(ROLE_KEYS), champRole || "Any role", function (name) {
+    champRole = name === "Any role" ? "" : name;
+    if (els.champs && els.champs.value) renderChampMenu();
+  });
+  renderPicks();
   const rows = listMatches();
   els.range.textContent = rows.length.toLocaleString() + " matches";
   renderAcc(rows);
@@ -332,63 +724,6 @@ function render() {
   }
 }
 
-function renderChampChips() {
-  if (!els.champChips) return;
-  els.champChips.innerHTML = "";
-  els.champChips.hidden = !champFilters.length;
-  for (let i = 0; i < champFilters.length; i += 1) {
-    const id = champFilters[i];
-    const button = document.createElement("button");
-    button.type = "button";
-    button.className = "active";
-    const img = document.createElement("img");
-    img.src = portrait(id);
-    img.alt = "";
-    button.append(img, document.createTextNode(champName(id)));
-    button.addEventListener("click", function () {
-      toggleChamp(id);
-      render();
-    });
-    els.champChips.append(button);
-  }
-}
-
-function hideChampMenu() {
-  if (!els.champMenu) return;
-  els.champMenu.hidden = true;
-  els.champMenu.innerHTML = "";
-}
-
-function renderChampMenu() {
-  if (!els.champMenu || !els.champs) return;
-  const hits = searchChamps(els.champs.value);
-  els.champMenu.innerHTML = "";
-  if (!hits.length) {
-    els.champMenu.hidden = true;
-    return;
-  }
-  for (let i = 0; i < hits.length; i += 1) {
-    const id = hits[i];
-    const button = document.createElement("button");
-    button.type = "button";
-    const img = document.createElement("img");
-    img.src = portrait(id);
-    img.alt = "";
-    button.append(img, document.createTextNode(champName(id)));
-    button.addEventListener("mousedown", function (event) {
-      event.preventDefault();
-    });
-    button.addEventListener("click", function () {
-      toggleChamp(id);
-      els.champs.value = "";
-      hideChampMenu();
-      render();
-    });
-    els.champMenu.append(button);
-  }
-  els.champMenu.hidden = false;
-}
-
 function showApp() {
   els.boot.classList.add("is-hidden");
   els.boot.hidden = true;
@@ -412,36 +747,37 @@ function boot() {
     if (params.get("league")) league = params.get("league");
     if (params.get("window")) windowKey = params.get("window");
     if (params.get("patch")) gamePatch = params.get("patch");
-    champFilters = parseChamps(params.get("champ"));
-    els.search.addEventListener("input", function () {
-      search = els.search.value;
+    teamFilters = parseList(params.get("team")).slice(0, 2);
+    lastTeam = teamFilters[teamFilters.length - 1] || "";
+    champFilters = parseChampSpecs(params.get("champ"));
+    playerFilters = parseList(params.get("player"));
+    bindCombo(els.teams, els.teamMenu, renderTeamMenu, function () {
+      const hits = searchNames(listTeams(), els.teams.value, teamFilters, 1);
+      if (!hits.length) return;
+      toggleTeam(hits[0]);
+      els.teams.value = "";
+      hideMenu(els.teamMenu);
       render();
     });
-    if (els.champs) {
-      els.champs.addEventListener("input", renderChampMenu);
-      els.champs.addEventListener("focus", renderChampMenu);
-      els.champs.addEventListener("blur", function () {
-        setTimeout(hideChampMenu, 120);
-      });
-      els.champs.addEventListener("keydown", function (event) {
-        if (event.key === "Escape") {
-          els.champs.value = "";
-          hideChampMenu();
-          return;
-        }
-        if (event.key !== "Enter") return;
-        const hits = searchChamps(els.champs.value);
-        if (!hits.length) return;
-        event.preventDefault();
-        toggleChamp(hits[0]);
-        els.champs.value = "";
-        hideChampMenu();
-        render();
-      });
-    }
+    bindCombo(els.champs, els.champMenu, renderChampMenu, function () {
+      const hits = searchChamps(els.champs.value);
+      if (!hits.ids.length) return;
+      toggleChamp(hits.ids[0], "", hits.role);
+      els.champs.value = "";
+      hideMenu(els.champMenu);
+      render();
+    });
+    bindCombo(els.players, els.playerMenu, renderPlayerMenu, function () {
+      const hits = searchNames(listPlayers(), els.players.value, playerFilters, 1);
+      if (!hits.length) return;
+      togglePlayer(hits[0]);
+      els.players.value = "";
+      hideMenu(els.playerMenu);
+      render();
+    });
     render();
     showApp();
-    els.search.focus();
+    if (els.teams) els.teams.focus();
   } catch (error) {
     if (els.bootStatus) els.bootStatus.textContent = error.message;
   }

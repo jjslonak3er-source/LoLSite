@@ -1125,6 +1125,34 @@ select:hover,
   object-position: center 18%;
 }
 
+.filter-picks .chip-vs {
+  align-self: center;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  padding: 0 2px;
+}
+
+.filter-picks .chip-role,
+.filter-picks .chip-team {
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 1px 6px;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.filter-picks .chip-role:hover,
+.filter-picks .chip-team:hover {
+  color: var(--text);
+  border-color: var(--line-strong);
+}
+
 .matches-tools {
   display: grid;
   gap: 8px;
@@ -1719,6 +1747,7 @@ select:hover,
 .match-side-name {
   font-weight: 700;
   min-width: 72px;
+  cursor: pointer;
 }
 
 .match-side.win .match-side-name {
