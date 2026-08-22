@@ -1,0 +1,8 @@
+.DS_Store
+Thumbs.db
+*.log
+oracles.csv
+cache/
+__pycache__/
+.venv/
+_site/

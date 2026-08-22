@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Whisper Draft — Players</title>
+    <meta name="description" content="Pro player aggregate stats and champion pools from Oracle's Elixir." />
+    <link rel="preconnect" href="https://ddragon.leagueoflegends.com" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&family=Sora:wght@600;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="styles.css?v=21" />
+  </head>
+  <body>
+    <div class="vignette"></div>
+    <div id="boot" class="boot">
+      <div class="boot-mark">W</div>
+      <h1>Whisper Draft</h1>
+      <p id="boot-status">Loading players…</p>
+    </div>
+
+    <div id="app" class="app" hidden>
+      <header class="topbar">
+        <div class="brand">
+          <span class="brand-mark">W</span>
+          <div>
+            <strong>Whisper Draft</strong>
+            <nav class="site-nav">
+              <a href="index.html">Draft</a>
+              <a href="meta.html">Meta</a>
+              <a href="pro.html">Pro-Meta</a>
+              <a href="matches.html">Matches</a>
+              <a href="player.html" aria-current="page">Players</a>
+              <a href="team.html">Teams</a>
+            </nav>
+          </div>
+        </div>
+        <div class="phase-wrap">
+          <p class="phase-kicker">Player stats</p>
+          <h2 id="player-title" class="phase-title done">Players</h2>
+        </div>
+        <div class="top-actions">
+          <span id="player-range" class="game-label"></span>
+        </div>
+      </header>
+
+      <main class="player-layout">
+        <div class="pro-tools">
+          <input
+            id="player-search"
+            type="search"
+            placeholder="Search players or a champion"
+            autocomplete="off"
+            spellcheck="false"
+          />
+          <div id="player-leagues" class="chips" role="tablist" aria-label="Leagues"></div>
+          <div id="player-roles" class="chips" role="tablist" aria-label="Positions"></div>
+          <div id="player-windows" class="chips" role="tablist" aria-label="Time window"></div>
+          <div id="player-patches" class="chips" role="tablist" aria-label="Patches"></div>
+          <div id="player-tags" class="chips" role="tablist" aria-label="Tags"></div>
+        </div>
+        <div id="player-summary" class="player-summary" hidden></div>
+        <div class="pro-board player-board">
+          <section class="pro-main">
+            <div class="pro-block-head">
+              <h4 id="pool-title">Players</h4>
+            </div>
+            <div class="pro-table-wrap">
+              <table class="pro-table">
+                <thead id="pool-head"></thead>
+                <tbody id="pool-body"></tbody>
+              </table>
+            </div>
+          </section>
+          <aside id="player-side" class="pro-side" hidden>
+            <div class="pro-side-head">
+              <h3>Recent games</h3>
+              <p id="games-sub" class="muted"></p>
+            </div>
+            <div class="pro-table-wrap">
+              <table class="pro-table pro-table-compact">
+                <thead>
+                  <tr>
+                    <th>Date</th>
+                    <th>Champ</th>
+                    <th>Vs</th>
+                    <th>KDA</th>
+                    <th class="sort-num">Result</th>
+                  </tr>
+                </thead>
+                <tbody id="games-body"></tbody>
+              </table>
+            </div>
+          </aside>
+        </div>
+      </main>
+    </div>
+
+    <script src="champions.js"></script>
+    <script src="pro-games.js"></script>
+    <script src="player-ratings.js"></script>
+    <script src="player.js"></script>
+  </body>
+</html>

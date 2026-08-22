@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Whisper Draft — Teams</title>
+    <meta name="description" content="Pro team rosters, champion pools, and ratings from Oracle's Elixir." />
+    <link rel="preconnect" href="https://ddragon.leagueoflegends.com" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&family=Sora:wght@600;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="styles.css?v=19" />
+  </head>
+  <body>
+    <div class="vignette"></div>
+    <div id="boot" class="boot">
+      <div class="boot-mark">W</div>
+      <h1>Whisper Draft</h1>
+      <p id="boot-status">Loading teams…</p>
+    </div>
+
+    <div id="app" class="app" hidden>
+      <header class="topbar">
+        <div class="brand">
+          <span class="brand-mark">W</span>
+          <div>
+            <strong>Whisper Draft</strong>
+            <nav class="site-nav">
+              <a href="index.html">Draft</a>
+              <a href="meta.html">Meta</a>
+              <a href="pro.html">Pro-Meta</a>
+              <a href="matches.html">Matches</a>
+              <a href="player.html">Players</a>
+              <a href="team.html" aria-current="page">Teams</a>
+            </nav>
+          </div>
+        </div>
+        <div class="phase-wrap">
+          <p class="phase-kicker">Team stats</p>
+          <h2 id="team-title" class="phase-title done">Teams</h2>
+        </div>
+        <div class="top-actions">
+          <span id="team-range" class="game-label"></span>
+        </div>
+      </header>
+
+      <main class="player-layout">
+        <div class="pro-tools">
+          <input
+            id="team-search"
+            type="search"
+            placeholder="Search teams"
+            autocomplete="off"
+            spellcheck="false"
+          />
+          <div id="team-leagues" class="chips" role="tablist" aria-label="Leagues"></div>
+          <div id="team-windows" class="chips" role="tablist" aria-label="Time window"></div>
+          <div id="team-patches" class="chips" role="tablist" aria-label="Patches"></div>
+        </div>
+        <div id="team-summary" class="player-summary" hidden></div>
+        <div class="pro-board player-board">
+          <section class="pro-main">
+            <div class="pro-block-head">
+              <h4 id="team-board-title">Teams</h4>
+            </div>
+            <div class="pro-table-wrap">
+              <table class="pro-table">
+                <thead id="team-head"></thead>
+                <tbody id="team-body"></tbody>
+              </table>
+            </div>
+          </section>
+          <aside id="team-side" class="pro-side" hidden>
+            <div class="pro-side-head">
+              <h3>Recent games</h3>
+              <p id="team-games-sub" class="muted"></p>
+            </div>
+            <div class="pro-table-wrap">
+              <table class="pro-table pro-table-compact">
+                <thead>
+                  <tr>
+                    <th>Date</th>
+                    <th>Vs</th>
+                    <th>Picks</th>
+                    <th class="sort-num">Result</th>
+                  </tr>
+                </thead>
+                <tbody id="team-games-body"></tbody>
+              </table>
+            </div>
+          </aside>
+        </div>
+      </main>
+    </div>
+
+    <script src="champions.js"></script>
+    <script src="pro-games.js"></script>
+    <script src="player-ratings.js"></script>
+    <script src="player.js"></script>
+    <script src="team.js"></script>
+  </body>
+</html>

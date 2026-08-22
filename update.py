@@ -106,9 +106,23 @@ def main() -> int:
         )
 
     if not args.skip_oracles:
-        run([PY, str(ROOT / "sync_oracles.py"), "--cache", str(ROOT / "oracles.csv")])
+        oracles = ROOT / "sync_oracles.py"
+        if not oracles.exists():
+            oracles = SYNC / "sync_oracles.py"
+        if not oracles.exists():
+            raise SystemExit(
+                "Missing sync_oracles.py. Upload it to the repo root "
+                "(next to update.py) and re-run the workflow."
+            )
+        run([PY, str(oracles), "--cache", str(ROOT / "oracles.csv")])
 
     if not args.skip_ratings:
+        score = ROOT / "ratings" / "score_players.py"
+        if not score.exists():
+            raise SystemExit(
+                "Missing ratings/score_players.py. Upload the ratings/ Python "
+                "files (not just player_ratings.json) and re-run."
+            )
         csv_path = ROOT / "oracles.csv"
         extra = ["--csv", str(csv_path)] if csv_path.exists() else []
         run([PY, "-m", "ratings.score_players", *extra])
