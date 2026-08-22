@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Whisper Draft — Recent games</title>
+    <meta name="description" content="Recent pro games for a champion from Oracle's Elixir." />
+    <link rel="preconnect" href="https://ddragon.leagueoflegends.com" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&family=Sora:wght@600;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="styles.css?v=17" />
+  </head>
+  <body>
+    <div class="vignette"></div>
+
+    <div id="boot" class="boot">
+      <div class="boot-mark">W</div>
+      <h1>Whisper Draft</h1>
+      <p id="boot-status">Loading games…</p>
+    </div>
+
+    <div id="app" class="app" hidden>
+      <header class="topbar">
+        <div class="brand">
+          <span class="brand-mark">W</span>
+          <div>
+            <strong>Whisper Draft</strong>
+            <nav class="site-nav">
+              <a href="index.html">Draft</a>
+              <a href="meta.html">Meta</a>
+              <a href="pro.html">Pro-Meta</a>
+              <a href="matches.html">Matches</a>
+              <a href="player.html">Players</a>
+              <a href="team.html">Teams</a>
+            </nav>
+          </div>
+        </div>
+
+        <div class="phase-wrap">
+          <p class="phase-kicker">Recent games</p>
+          <h2 id="games-title" class="phase-title done">Champion</h2>
+        </div>
+
+        <div class="top-actions">
+          <a id="back-pro" class="detail-link" href="pro.html">Back to Pro-Meta</a>
+        </div>
+      </header>
+
+      <main class="pro-board pro-board-single">
+        <section class="pro-main">
+          <div class="pro-tools">
+            <div id="games-leagues" class="chips" role="tablist" aria-label="Leagues"></div>
+            <div id="games-roles" class="chips" role="tablist" aria-label="Positions"></div>
+            <div id="games-windows" class="chips" role="tablist" aria-label="Time window"></div>
+          </div>
+          <div class="pro-table-wrap">
+            <table class="pro-table">
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>League</th>
+                  <th>Role</th>
+                  <th>Player</th>
+                  <th>Teams</th>
+                  <th>Vs</th>
+                  <th>KDA</th>
+                  <th class="sort-num">Result</th>
+                </tr>
+              </thead>
+              <tbody id="games-body"></tbody>
+            </table>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <script src="champions.js"></script>
+    <script src="pro-games.js"></script>
+    <script src="games.js"></script>
+  </body>
+</html>

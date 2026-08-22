@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Whisper Draft — Match preview</title>
+    <link rel="preconnect" href="https://ddragon.leagueoflegends.com" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&family=Sora:wght@600;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="styles.css?v=20" />
+  </head>
+  <body>
+    <div id="splash" class="splash" aria-hidden="true"></div>
+    <div class="vignette"></div>
+
+    <div id="boot" class="boot">
+      <div class="boot-mark">W</div>
+      <h1>Whisper Draft</h1>
+      <p id="boot-status">Loading match…</p>
+    </div>
+
+    <div id="app" class="app" hidden>
+      <header class="topbar">
+        <div class="brand">
+          <span class="brand-mark">W</span>
+          <div>
+            <strong>Whisper Draft</strong>
+            <nav class="site-nav">
+              <a href="index.html">Draft</a>
+              <a href="meta.html">Meta</a>
+              <a href="pro.html">Pro-Meta</a>
+              <a href="matches.html">Matches</a>
+              <a href="player.html">Players</a>
+              <a href="team.html">Teams</a>
+            </nav>
+          </div>
+        </div>
+        <div class="phase-wrap">
+          <p class="phase-kicker">Match preview</p>
+          <h2 id="match-title" class="phase-title done">Match</h2>
+        </div>
+        <div class="top-actions">
+          <a id="back-link" class="detail-link" href="matches.html">All matches</a>
+        </div>
+      </header>
+
+      <main class="board">
+        <section id="blue-team" class="team team-blue" aria-label="Blue side">
+          <header class="team-head">
+            <strong id="blue-name">Blue</strong>
+            <span>Blue</span>
+          </header>
+          <div id="blue-bans" class="bans"></div>
+          <div id="blue-picks" class="picks"></div>
+        </section>
+
+        <section class="match-mid">
+          <p id="match-result" class="result"></p>
+          <p id="match-meta"></p>
+          <p id="match-mvp" class="match-mvp"></p>
+          <p id="match-length"></p>
+          <div id="match-stats" class="match-stats"></div>
+          <div id="match-player" class="match-player-panel" hidden></div>
+        </section>
+
+        <section id="red-team" class="team team-red" aria-label="Red side">
+          <header class="team-head">
+            <strong id="red-name">Red</strong>
+            <span>Red</span>
+          </header>
+          <div id="red-bans" class="bans"></div>
+          <div id="red-picks" class="picks"></div>
+        </section>
+      </main>
+    </div>
+
+    <script src="champions.js"></script>
+    <script src="pro-games.js"></script>
+    <script src="counters.js"></script>
+    <script src="synergies.js"></script>
+    <script src="player-ratings.js"></script>
+    <script src="predict.js"></script>
+    <script src="match.js"></script>
+  </body>
+</html>

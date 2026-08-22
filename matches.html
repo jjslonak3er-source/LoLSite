@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Whisper Draft — Recent matches</title>
+    <link rel="preconnect" href="https://ddragon.leagueoflegends.com" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&family=Sora:wght@600;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="styles.css?v=20" />
+  </head>
+  <body>
+    <div class="vignette"></div>
+    <div id="boot" class="boot">
+      <div class="boot-mark">W</div>
+      <h1>Whisper Draft</h1>
+      <p id="boot-status">Loading matches…</p>
+    </div>
+
+    <div id="app" class="app" hidden>
+      <header class="topbar">
+        <div class="brand">
+          <span class="brand-mark">W</span>
+          <div>
+            <strong>Whisper Draft</strong>
+            <nav class="site-nav">
+              <a href="index.html">Draft</a>
+              <a href="meta.html">Meta</a>
+              <a href="pro.html">Pro-Meta</a>
+              <a href="matches.html" aria-current="page">Matches</a>
+              <a href="player.html">Players</a>
+              <a href="team.html">Teams</a>
+            </nav>
+          </div>
+        </div>
+        <div class="phase-wrap">
+          <p class="phase-kicker">Recent matches</p>
+          <h2 id="matches-title" class="phase-title done">Oracle’s Elixir</h2>
+        </div>
+        <div class="top-actions">
+          <span id="matches-range" class="game-label"></span>
+        </div>
+      </header>
+
+      <main class="pro-board pro-board-single">
+        <section class="pro-main">
+          <div class="pro-tools matches-tools">
+            <input
+              id="matches-search"
+              type="search"
+              placeholder="Search teams"
+              autocomplete="off"
+              spellcheck="false"
+            />
+            <div id="matches-leagues" class="chips" role="tablist" aria-label="Leagues"></div>
+            <div id="matches-windows" class="chips" role="tablist" aria-label="Time window"></div>
+            <div id="matches-patches" class="chips" role="tablist" aria-label="Patches"></div>
+            <div id="matches-acc" class="matches-acc" hidden></div>
+          </div>
+          <div class="pro-table-wrap">
+            <table class="pro-table">
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>League</th>
+                  <th>Patch</th>
+                  <th>Blue</th>
+                  <th>Red</th>
+                  <th>Winner</th>
+                </tr>
+              </thead>
+              <tbody id="matches-body"></tbody>
+            </table>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <script src="champions.js"></script>
+    <script src="pro-games.js"></script>
+    <script src="counters.js"></script>
+    <script src="synergies.js"></script>
+    <script src="player-ratings.js"></script>
+    <script src="predict.js"></script>
+    <script src="matches.js"></script>
+  </body>
+</html>

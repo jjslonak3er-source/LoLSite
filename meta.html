@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Whisper Draft — Meta</title>
+    <meta
+      name="description"
+      content="Solo queue champion pick rates, matchups, and pairings from LoLalytics."
+    />
+    <link rel="preconnect" href="https://ddragon.leagueoflegends.com" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&family=Sora:wght@600;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="styles.css?v=15" />
+  </head>
+  <body>
+    <div class="vignette"></div>
+
+    <div id="boot" class="boot">
+      <div class="boot-mark">W</div>
+      <h1>Whisper Draft</h1>
+      <p id="boot-status">Loading solo queue meta…</p>
+    </div>
+
+    <div id="app" class="app" hidden>
+      <header class="topbar">
+        <div class="brand">
+          <span class="brand-mark">W</span>
+          <div>
+            <strong>Whisper Draft</strong>
+            <nav class="site-nav">
+              <a href="index.html">Draft</a>
+              <a href="meta.html" aria-current="page">Meta</a>
+              <a href="pro.html">Pro-Meta</a>
+              <a href="matches.html">Matches</a>
+              <a href="player.html">Players</a>
+              <a href="team.html">Teams</a>
+            </nav>
+          </div>
+        </div>
+
+        <div class="phase-wrap">
+          <p class="phase-kicker">Solo meta</p>
+          <h2 id="pro-title" class="phase-title done">LoLalytics</h2>
+        </div>
+
+        <div class="top-actions">
+          <span id="pro-range" class="game-label"></span>
+        </div>
+      </header>
+
+      <main class="pro-board">
+        <section class="pro-main">
+          <div class="pro-tools">
+            <input
+              id="pro-search"
+              type="search"
+              placeholder="Search champions"
+              autocomplete="off"
+              spellcheck="false"
+            />
+            <div id="pro-leagues" class="chips" role="tablist" aria-label="Leagues" hidden></div>
+            <div id="pro-roles" class="chips" role="tablist" aria-label="Positions"></div>
+            <div id="pro-windows" class="pro-windows chips" role="tablist" aria-label="Time window" hidden></div>
+            <div id="pro-patches" class="chips" role="tablist" aria-label="Patches" hidden></div>
+          </div>
+          <div class="pro-table-wrap">
+            <table class="pro-table">
+              <thead>
+                <tr>
+                  <th data-sort="name">Champion</th>
+                  <th data-sort="role">Role</th>
+                  <th class="sort-num" data-sort="meta" title="Popularity plus winrate, then pairing and counters vs popular champs">Meta</th>
+                  <th class="sort-num" data-sort="potential" title="Matchups into the current high-meta pool, relative to this champion's Meta score">Potential</th>
+                  <th class="sort-num" data-sort="picks">Picks</th>
+                  <th class="sort-num" data-sort="pickRate">Pick%</th>
+                  <th class="sort-num" data-sort="wins">Wins</th>
+                  <th class="sort-num" data-sort="winRate">WR</th>
+                </tr>
+              </thead>
+              <tbody id="pro-body"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <aside class="pro-side">
+          <div class="pro-side-head">
+            <h3 id="detail-name">Related champs</h3>
+            <p id="detail-sub" class="muted">Select a champion.</p>
+            <a id="detail-games" class="detail-link" hidden>Recent games</a>
+          </div>
+          <div class="pro-block">
+            <div class="pro-block-head">
+              <h4>Matchups</h4>
+              <div id="pro-vs" class="chips" role="tablist" aria-label="Matchup scope"></div>
+            </div>
+            <div class="pro-table-wrap">
+              <table class="pro-table pro-table-compact">
+                <thead>
+                  <tr>
+                    <th data-match-sort="name">Champion</th>
+                    <th class="sort-num" data-match-sort="games">Games</th>
+                    <th class="sort-num" data-match-sort="winRate">WR</th>
+                    <th class="sort-num" data-match-sort="score">Counter</th>
+                  </tr>
+                </thead>
+                <tbody id="match-body"></tbody>
+              </table>
+            </div>
+          </div>
+          <div class="pro-block">
+            <h4>Pairings</h4>
+            <div class="pro-table-wrap">
+              <table class="pro-table pro-table-compact">
+                <thead>
+                  <tr>
+                    <th data-pair-sort="name">Champion</th>
+                    <th class="sort-num" data-pair-sort="games">Games</th>
+                    <th class="sort-num" data-pair-sort="winRate">WR</th>
+                    <th class="sort-num" data-pair-sort="score">Pairing</th>
+                  </tr>
+                </thead>
+                <tbody id="pair-body"></tbody>
+              </table>
+            </div>
+          </div>
+        </aside>
+      </main>
+    </div>
+
+    <script>
+      window.RIFT_META_MODE = "solo";
+    </script>
+    <script src="champions.js"></script>
+    <script src="winrates.js"></script>
+    <script src="counters.js"></script>
+    <script src="synergies.js"></script>
+    <script src="pro.js"></script>
+  </body>
+</html>
