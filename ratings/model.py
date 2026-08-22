@@ -33,7 +33,7 @@ ACTIVE_DAYS = 50
 MIN_RECENT_GAMES = 6
 CHAMP_MIN_GAMES = 3
 CHAMP_PRIOR = 10.0
-CHAMP_MIN_PLAYERS = 2
+CHAMP_MIN_PLAYERS = 1
 # Team BT at internationals is in win-rate deviation (0.10 ≈ 10pp).
 # Scale into the same units as form_z so region can actually move rankings.
 REGION_SCALE = 5.0

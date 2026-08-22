@@ -207,7 +207,7 @@ def print_champ(payload: dict, champ: str, top: int) -> None:
                     merged[key] = {**row, "role": role, "title": title}
     if not found:
         print()
-        print(f"No champion ladder for {champ} (need {6}+ games and 5 players)")
+        print(f"No champion ladder for {champ} (need {3}+ games)")
         return
     if len(merged) > 1:
         ranked = sorted(merged.values(), key=lambda item: item["score"], reverse=True)

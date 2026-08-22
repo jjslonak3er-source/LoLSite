@@ -28,6 +28,9 @@ const els = {
   title: document.getElementById("pro-title"),
   range: document.getElementById("pro-range"),
   search: document.getElementById("pro-search"),
+  team: document.getElementById("pro-team"),
+  teamMenu: document.getElementById("pro-team-menu"),
+  teamChips: document.getElementById("pro-team-chips"),
   leagues: document.getElementById("pro-leagues"),
   roles: document.getElementById("pro-roles"),
   windows: document.getElementById("pro-windows"),
@@ -50,6 +53,7 @@ let champMap = new Map();
 let bundle = { games: [], leagues: LEAGUES.slice(1) };
 let search = "";
 let league = "All";
+let team = "";
 let role = "All";
 let windowKey = "recent";
 let gamePatch = "All";
@@ -83,15 +87,61 @@ function fmtScore(value) {
 }
 
 function champPlayerRows(id) {
-  const champs = (window.RIFT_PLAYER_RATINGS && window.RIFT_PLAYER_RATINGS.champs) || {};
-  const ladder = champs[champSlug(id)] || champs[champSlug(champName(id))];
-  if (!ladder) return [];
-  let rows = (ladder.players || []).slice();
-  if (league !== "All") {
-    rows = rows.filter(function (row) {
-      return row.l === league;
-    });
+  const frozen = ((window.RIFT_PLAYER_RATINGS && window.RIFT_PLAYER_RATINGS.champs) || {});
+  const ladder = frozen[champSlug(id)] || frozen[champSlug(champName(id))] || { players: [] };
+  const scores = {};
+  const listed = ladder.players || [];
+  for (let i = 0; i < listed.length; i += 1) {
+    scores[(listed[i].n || "").trim().toLowerCase()] = listed[i];
   }
+  const games = filteredGames();
+  const map = {};
+  for (let g = 0; g < games.length; g += 1) {
+    const game = games[g];
+    const sides = [
+      { champs: game.b, names: game.bp, team: game.bt, win: game.w === 1 },
+      { champs: game.r, names: game.rp, team: game.rt, win: game.w === 0 },
+    ];
+    for (let s = 0; s < 2; s += 1) {
+      const side = sides[s];
+      if (team && side.team !== team) continue;
+      for (let i = 0; i < 5; i += 1) {
+        if (side.champs[i] !== id) continue;
+        const name = side.names[i] || "";
+        const key = name.trim().toLowerCase();
+        if (!key) continue;
+        const rec = map[key] || (map[key] = { n: name, g: 0, wins: 0, t: side.team, l: game.l });
+        rec.g += 1;
+        rec.wins += side.win ? 1 : 0;
+        rec.t = side.team;
+        rec.l = game.l;
+      }
+    }
+  }
+  const rows = Object.keys(map)
+    .map(function (key) {
+      const rec = map[key];
+      const hit = scores[key];
+      return {
+        n: rec.n,
+        s: hit && hit.s != null ? hit.s : null,
+        g: rec.g,
+        wr: rec.g ? rec.wins / rec.g : 0,
+        l: rec.l,
+        t: rec.t,
+      };
+    })
+    .filter(function (row) {
+      return row.g >= 3;
+    });
+  rows.sort(function (a, b) {
+    if (a.s != null && b.s != null && b.s !== a.s) return b.s - a.s;
+    if (a.s != null && b.s == null) return -1;
+    if (a.s == null && b.s != null) return 1;
+    if (b.wr !== a.wr) return b.wr - a.wr;
+    return b.g - a.g;
+  });
+  for (let i = 0; i < rows.length; i += 1) rows[i].k = i + 1;
   return rows;
 }
 
@@ -149,6 +199,34 @@ function listPatches(games) {
   return Object.keys(seen).sort(comparePatch).reverse();
 }
 
+function gameHasTeam(game) {
+  return !team || game.bt === team || game.rt === team;
+}
+
+function listTeams(games) {
+  const seen = {};
+  for (let i = 0; i < games.length; i += 1) {
+    if (games[i].bt) seen[games[i].bt] = true;
+    if (games[i].rt) seen[games[i].rt] = true;
+  }
+  return Object.keys(seen).sort(function (a, b) {
+    return a.localeCompare(b);
+  });
+}
+
+function searchTeams(q) {
+  const needle = q.trim().toLowerCase();
+  const teams = listTeams(windowGames());
+  const out = [];
+  for (let i = 0; i < teams.length; i += 1) {
+    if (teams[i] === team) continue;
+    if (needle && teams[i].toLowerCase().indexOf(needle) === -1) continue;
+    out.push(teams[i]);
+    if (out.length >= 12) break;
+  }
+  return out;
+}
+
 function filteredGames() {
   const cutoff = cutoffDate();
   const rows = bundle.games || [];
@@ -158,6 +236,7 @@ function filteredGames() {
     if (league !== "All" && game.l !== league) continue;
     if (cutoff && game.d < cutoff) continue;
     if (gamePatch !== "All" && game.p !== gamePatch) continue;
+    if (!gameHasTeam(game)) continue;
     out.push(game);
   }
   return out;
@@ -295,11 +374,12 @@ function tally() {
     for (let i = 0; i < 5; i += 1) {
       if (role !== "All" && ROLE_KEYS[i] !== role.toLowerCase()) continue;
       const both = [
-        { id: game.b[i], win: game.w === 1, allies: game.b, enemies: game.r },
-        { id: game.r[i], win: game.w === 0, allies: game.r, enemies: game.b },
+        { id: game.b[i], win: game.w === 1, allies: game.b, enemies: game.r, team: game.bt },
+        { id: game.r[i], win: game.w === 0, allies: game.r, enemies: game.b, team: game.rt },
       ];
       for (let s = 0; s < 2; s += 1) {
         const us = both[s];
+        if (team && us.team !== team) continue;
         if (!stats[us.id]) stats[us.id] = {};
         if (!stats[us.id][ROLE_KEYS[i]]) stats[us.id][ROLE_KEYS[i]] = { picks: 0, wins: 0 };
         stats[us.id][ROLE_KEYS[i]].picks += 1;
@@ -646,7 +726,7 @@ function renderMeta(data) {
     els.range.textContent = bits.join("  ·  ");
     return;
   }
-  els.title.textContent = league === "All" ? bundle.leagues.join(" · ") : league;
+  els.title.textContent = team || (league === "All" ? bundle.leagues.join(" · ") : league);
   const cutoff = cutoffDate();
   const from = cutoff || bundle.from;
   const to = bundle.to;
@@ -709,6 +789,9 @@ function renderChips() {
       gamePatch = name;
       render();
     });
+    const teams = listTeams(windowGames());
+    if (team && teams.indexOf(team) === -1) team = "";
+    renderTeamChips();
   }
   chipRow(els.vs, ["Same role", "All champs"], vsScope === "all" ? "All champs" : "Same role", function (name) {
     vsScope = name === "All champs" ? "all" : "role";
@@ -897,7 +980,8 @@ function renderDetail(data) {
       "&window=" +
       encodeURIComponent(windowKey) +
       "&patch=" +
-      encodeURIComponent(gamePatch);
+      encodeURIComponent(gamePatch) +
+      (team ? "&team=" + encodeURIComponent(team) : "");
     els.detailGames.textContent = "Recent games";
   }
   fillScoreTable(els.matchBody, vsRows, "No matchups at this filter.");
@@ -918,7 +1002,9 @@ function renderPlayers() {
   if (els.board) els.board.classList.add("has-players");
   if (els.playerSub) {
     els.playerSub.textContent =
-      champName(selected) + (league === "All" ? "" : " · " + league) + " · season ratings";
+      champName(selected) +
+      (team ? " · " + team : league === "All" ? "" : " · " + league) +
+      " · 3+ games";
   }
   body.innerHTML = "";
   if (!rows.length) {
@@ -926,13 +1012,12 @@ function renderPlayers() {
     const td = document.createElement("td");
     td.colSpan = 3;
     td.className = "pick-empty";
-    td.textContent = "No ranked players for this champion.";
+    td.textContent = "No players with 3+ games on this champion.";
     tr.append(td);
     body.append(tr);
     return;
   }
-  const cap = Math.min(rows.length, 20);
-  for (let i = 0; i < cap; i += 1) {
+  for (let i = 0; i < rows.length; i += 1) {
     const row = rows[i];
     const tr = document.createElement("tr");
     tr.title = (row.t || "") + (row.g ? " · " + row.g + "g · " + fmtPct(row.wr) : "");
@@ -961,6 +1046,13 @@ function renderPlayers() {
 }
 
 function render() {
+  if (!SOLO) {
+    const scoped = windowGames();
+    const patches = listPatches(scoped);
+    if (gamePatch !== "All" && patches.indexOf(gamePatch) === -1) gamePatch = "All";
+    const teams = listTeams(scoped);
+    if (team && teams.indexOf(team) === -1) team = "";
+  }
   const data = tally();
   renderMeta(data);
   renderChips();
@@ -969,11 +1061,84 @@ function render() {
   renderPlayers();
 }
 
+function renderTeamChips() {
+  if (!els.teamChips) return;
+  els.teamChips.innerHTML = "";
+  els.teamChips.hidden = !team;
+  if (!team) return;
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "active";
+  button.textContent = team;
+  button.addEventListener("click", function () {
+    team = "";
+    if (els.team) els.team.value = "";
+    render();
+  });
+  els.teamChips.append(button);
+}
+
+function hideTeamMenu() {
+  if (!els.teamMenu) return;
+  els.teamMenu.hidden = true;
+  els.teamMenu.innerHTML = "";
+}
+
+function pickTeam(name) {
+  team = name;
+  if (els.team) els.team.value = "";
+  hideTeamMenu();
+  render();
+}
+
+function renderTeamMenu() {
+  if (!els.teamMenu || !els.team) return;
+  const hits = searchTeams(els.team.value);
+  els.teamMenu.innerHTML = "";
+  if (!hits.length) {
+    els.teamMenu.hidden = true;
+    return;
+  }
+  for (let i = 0; i < hits.length; i += 1) {
+    const name = hits[i];
+    const button = document.createElement("button");
+    button.type = "button";
+    button.textContent = name;
+    button.addEventListener("mousedown", function (event) {
+      event.preventDefault();
+    });
+    button.addEventListener("click", function () {
+      pickTeam(name);
+    });
+    els.teamMenu.append(button);
+  }
+  els.teamMenu.hidden = false;
+}
+
 function bind() {
   els.search.addEventListener("input", function () {
     search = els.search.value;
     render();
   });
+  if (els.team) {
+    els.team.addEventListener("input", renderTeamMenu);
+    els.team.addEventListener("focus", renderTeamMenu);
+    els.team.addEventListener("blur", function () {
+      setTimeout(hideTeamMenu, 120);
+    });
+    els.team.addEventListener("keydown", function (event) {
+      if (event.key === "Escape") {
+        els.team.value = "";
+        hideTeamMenu();
+        return;
+      }
+      if (event.key !== "Enter") return;
+      const hits = searchTeams(els.team.value);
+      if (!hits.length) return;
+      event.preventDefault();
+      pickTeam(hits[0]);
+    });
+  }
   document.querySelectorAll(".pro-table th[data-sort]").forEach(function (th) {
     th.addEventListener("click", function () {
       const key = th.getAttribute("data-sort");
@@ -1038,6 +1203,7 @@ function boot() {
     const params = new URLSearchParams(location.search);
     if (params.get("champ")) selected = params.get("champ");
     if (params.get("league")) league = params.get("league");
+    if (params.get("team")) team = params.get("team");
     if (params.get("window")) windowKey = params.get("window");
     if (params.get("patch")) gamePatch = params.get("patch");
     bind();

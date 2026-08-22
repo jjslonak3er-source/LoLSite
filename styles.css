@@ -1035,10 +1035,98 @@ select:hover,
   gap: 8px;
 }
 
-.matches-tools {
+.pro-tools input[type="search"] {
+  width: 100%;
+  min-width: 0;
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--slot);
+  color: var(--text);
+  outline: none;
+}
+
+.pro-tools input[type="search"]:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(197, 208, 216, 0.08);
+}
+
+.filter-row {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
+  gap: 8px;
+}
+
+.filter-row > input,
+.filter-row > .filter-combo {
+  flex: 1 1 180px;
+}
+
+.filter-combo {
+  position: relative;
+  min-width: 0;
+}
+
+.filter-menu {
+  position: absolute;
+  z-index: 6;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  max-height: 260px;
+  overflow: auto;
+  background: #121418;
+  border: 1px solid var(--line-strong);
+  border-radius: 10px;
+  box-shadow: var(--shadow);
+}
+
+.filter-menu button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 7px 10px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+}
+
+.filter-menu button:hover {
+  background: rgba(197, 208, 216, 0.08);
+  color: var(--text);
+}
+
+.filter-menu img {
+  width: 22px;
+  height: 22px;
+  border-radius: 4px;
+  object-fit: cover;
+  object-position: center 18%;
+}
+
+.filter-picks button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.filter-picks img {
+  width: 16px;
+  height: 16px;
+  border-radius: 3px;
+  object-fit: cover;
+  object-position: center 18%;
+}
+
+.matches-tools {
+  display: grid;
   gap: 8px;
 }
 
@@ -1649,6 +1737,11 @@ select:hover,
   object-fit: cover;
   object-position: center 18%;
   background: var(--slot);
+  cursor: pointer;
+}
+
+.match-icons img.active {
+  box-shadow: 0 0 0 2px var(--accent);
 }
 
 .pick .match-player {

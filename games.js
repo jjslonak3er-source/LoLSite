@@ -22,6 +22,7 @@ let champMap = new Map();
 let bundle = { games: [] };
 let champ = params.get("champ") || "";
 let league = params.get("league") || "All";
+let team = params.get("team") || "";
 let role = params.get("role") || "All";
 let windowKey = params.get("window") || "recent";
 let gamePatch = params.get("patch") || "All";
@@ -74,12 +75,14 @@ function listGames() {
     if (league !== "All" && game.l !== league) continue;
     if (cutoff && game.d < cutoff) continue;
     if (gamePatch !== "All" && game.p !== gamePatch) continue;
+    if (team && game.bt !== team && game.rt !== team) continue;
     for (let r = 0; r < 5; r += 1) {
       if (want >= 0 && r !== want) continue;
       let side = "";
       if (game.b[r] === champ) side = "b";
       else if (game.r[r] === champ) side = "r";
       if (!side) continue;
+      if (team && (side === "b" ? game.bt : game.rt) !== team) continue;
       const win = side === "b" ? game.w === 1 : game.w === 0;
       const vs = side === "b" ? game.r[r] : game.b[r];
       const names = side === "b" ? game.bp : game.rp;
@@ -118,7 +121,8 @@ function render() {
     "&window=" +
     encodeURIComponent(windowKey) +
     "&patch=" +
-    encodeURIComponent(gamePatch);
+    encodeURIComponent(gamePatch) +
+    (team ? "&team=" + encodeURIComponent(team) : "");
 
   chipRow(els.leagues, LEAGUES, league, function (name) {
     league = name;

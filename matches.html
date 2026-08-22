@@ -11,7 +11,7 @@
       href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&family=Sora:wght@600;700&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="styles.css?v=20" />
+    <link rel="stylesheet" href="styles.css?v=23" />
   </head>
   <body>
     <div class="vignette"></div>
@@ -49,17 +49,30 @@
       <main class="pro-board pro-board-single">
         <section class="pro-main">
           <div class="pro-tools matches-tools">
-            <input
-              id="matches-search"
-              type="search"
-              placeholder="Search teams"
-              autocomplete="off"
-              spellcheck="false"
-            />
+            <div class="filter-row">
+              <input
+                id="matches-search"
+                type="search"
+                placeholder="Search teams"
+                autocomplete="off"
+                spellcheck="false"
+              />
+              <div class="filter-combo">
+                <input
+                  id="matches-champs"
+                  type="search"
+                  placeholder="Filter champions"
+                  autocomplete="off"
+                  spellcheck="false"
+                />
+                <div id="matches-champ-menu" class="filter-menu" hidden></div>
+              </div>
+              <div id="matches-acc" class="matches-acc" hidden></div>
+            </div>
             <div id="matches-leagues" class="chips" role="tablist" aria-label="Leagues"></div>
             <div id="matches-windows" class="chips" role="tablist" aria-label="Time window"></div>
             <div id="matches-patches" class="chips" role="tablist" aria-label="Patches"></div>
-            <div id="matches-acc" class="matches-acc" hidden></div>
+            <div id="matches-champ-chips" class="chips filter-picks" hidden></div>
           </div>
           <div class="pro-table-wrap">
             <table class="pro-table">

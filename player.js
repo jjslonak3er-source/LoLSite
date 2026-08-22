@@ -17,6 +17,7 @@ const TAG_SITUATION_MIN = 4;
 const TAG_BEHIND = -1000;
 const TAG_AHEAD = 1000;
 const TAG_MAX = 7;
+const CHAMP_MIN_GAMES = 3;
 const TAG_LABELS = [
   "Lane dominant",
   "Lane loser",
@@ -507,7 +508,7 @@ function liveBoard() {
     const champKeys = Object.keys(byChamp);
     for (let i = 0; i < champKeys.length; i += 1) {
       const rec = byChamp[champKeys[i]];
-      if (rec.g < 2) continue;
+      if (rec.g < 1) continue;
       const playerForm = forms[rec.n] || 0;
       const hot = rec.w ? rec.pred / rec.w : 0;
       const mixed = (rec.g * hot + 10 * playerForm) / (rec.g + 10);
@@ -539,9 +540,34 @@ function liveBoard() {
     for (let i = 0; i < pool.players.length; i += 1) {
       const row = pool.players[i];
       const k = playerKey(row.n);
-      if (!best[k] || row.mixed > best[k].mixed) best[k] = row;
+      const prev = best[k];
+      if (!prev) {
+        best[k] = { row: row, g: row.g, wrN: row.g, wrW: row.wr * row.g };
+      } else {
+        prev.g += row.g;
+        prev.wrN += row.g;
+        prev.wrW += row.wr * row.g;
+        if (row.mixed > prev.row.mixed) prev.row = row;
+      }
     }
-    const recs = Object.keys(best).map(function (k) { return best[k]; });
+    const recs = Object.keys(best)
+      .map(function (k) {
+        const rec = best[k];
+        return {
+          n: rec.row.n,
+          champ: rec.row.champ,
+          mixed: rec.row.mixed,
+          ctx: rec.row.ctx,
+          g: rec.g,
+          wr: rec.wrN ? rec.wrW / rec.wrN : 0,
+          l: rec.row.l,
+          t: rec.row.t,
+          r: rec.row.r,
+        };
+      })
+      .filter(function (row) {
+        return row.g >= CHAMP_MIN_GAMES;
+      });
     if (!recs.length) continue;
     const mixedMap = {};
     for (let i = 0; i < recs.length; i += 1) mixedMap[recs[i].n] = recs[i].mixed;
@@ -582,8 +608,7 @@ function champSlug(name) {
 }
 
 function champLadders() {
-  if (liveFiltersOn()) return liveBoard().champs || {};
-  return (window.RIFT_PLAYER_RATINGS && window.RIFT_PLAYER_RATINGS.champs) || {};
+  return liveBoard().champs || {};
 }
 
 function champIdFromTitle(title) {
@@ -677,7 +702,7 @@ function fallbackChampRow(playerName, champId) {
       };
     })
     .filter(function (row) {
-      return row.g >= 2;
+      return row.g >= CHAMP_MIN_GAMES;
     });
   if (!rows.length) return null;
   rows.sort(function (a, b) {

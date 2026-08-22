@@ -15,7 +15,7 @@
       href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&family=Sora:wght@600;700&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="styles.css?v=22" />
+    <link rel="stylesheet" href="styles.css?v=23" />
   </head>
   <body>
     <div class="vignette"></div>
@@ -56,17 +56,30 @@
       <main class="pro-board">
         <section class="pro-main">
           <div class="pro-tools">
-            <input
-              id="pro-search"
-              type="search"
-              placeholder="Search champions"
-              autocomplete="off"
-              spellcheck="false"
-            />
+            <div class="filter-row">
+              <input
+                id="pro-search"
+                type="search"
+                placeholder="Search champions"
+                autocomplete="off"
+                spellcheck="false"
+              />
+              <div class="filter-combo">
+                <input
+                  id="pro-team"
+                  type="search"
+                  placeholder="Filter team"
+                  autocomplete="off"
+                  spellcheck="false"
+                />
+                <div id="pro-team-menu" class="filter-menu" hidden></div>
+              </div>
+            </div>
             <div id="pro-leagues" class="chips" role="tablist" aria-label="Leagues"></div>
             <div id="pro-roles" class="chips" role="tablist" aria-label="Positions"></div>
             <div id="pro-windows" class="pro-windows chips" role="tablist" aria-label="Time window"></div>
             <div id="pro-patches" class="chips" role="tablist" aria-label="Patches"></div>
+            <div id="pro-team-chips" class="chips filter-picks" hidden></div>
           </div>
           <div class="pro-table-wrap">
             <table class="pro-table">

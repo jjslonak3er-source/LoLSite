@@ -10,6 +10,9 @@ const els = {
   title: document.getElementById("matches-title"),
   range: document.getElementById("matches-range"),
   search: document.getElementById("matches-search"),
+  champs: document.getElementById("matches-champs"),
+  champMenu: document.getElementById("matches-champ-menu"),
+  champChips: document.getElementById("matches-champ-chips"),
   leagues: document.getElementById("matches-leagues"),
   windows: document.getElementById("matches-windows"),
   patches: document.getElementById("matches-patches"),
@@ -22,6 +25,7 @@ let search = "";
 let league = "All";
 let windowKey = "recent";
 let gamePatch = "All";
+let champFilters = [];
 let patch = "";
 let champMap = new Map();
 const predictCache = {};
@@ -32,6 +36,62 @@ function portrait(id) {
 
 function champName(id) {
   return (champMap.get(id) && champMap.get(id).name) || id || "";
+}
+
+function champSlug(name) {
+  return String(name || "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, "");
+}
+
+function parseChamps(raw) {
+  if (!raw) return [];
+  return raw.split(",").map(function (part) {
+    return part.trim();
+  }).filter(function (id) {
+    return champMap.has(id);
+  });
+}
+
+function gameHasChamps(game) {
+  if (!champFilters.length) return true;
+  const pool = (game.b || []).concat(game.r || []);
+  for (let i = 0; i < champFilters.length; i += 1) {
+    if (pool.indexOf(champFilters[i]) === -1) return false;
+  }
+  return true;
+}
+
+function toggleChamp(id) {
+  if (!id || !champMap.has(id)) return;
+  const next = [];
+  let found = false;
+  for (let i = 0; i < champFilters.length; i += 1) {
+    if (champFilters[i] === id) found = true;
+    else next.push(champFilters[i]);
+  }
+  if (!found) next.push(id);
+  champFilters = next;
+}
+
+function searchChamps(q) {
+  const slug = champSlug(q);
+  if (!slug) return [];
+  const out = [];
+  champMap.forEach(function (champ, id) {
+    if (champFilters.indexOf(id) !== -1) return;
+    if (champSlug(id).indexOf(slug) === -1 && champSlug(champ.name).indexOf(slug) === -1) return;
+    out.push(id);
+  });
+  out.sort(function (a, b) {
+    const an = champSlug(champName(a));
+    const bn = champSlug(champName(b));
+    const as = an.indexOf(slug) === 0 ? 0 : 1;
+    const bs = bn.indexOf(slug) === 0 ? 0 : 1;
+    if (as !== bs) return as - bs;
+    return champName(a).localeCompare(champName(b));
+  });
+  return out.slice(0, 8);
 }
 
 function addDays(iso, days) {
@@ -108,6 +168,7 @@ function listMatches() {
     ) {
       continue;
     }
+    if (!gameHasChamps(game)) continue;
     out.push(game);
   }
   return out;
@@ -177,6 +238,12 @@ function champCell(ids, team, win) {
     img.src = portrait(id);
     img.alt = champName(id);
     img.title = champName(id);
+    if (champFilters.indexOf(id) !== -1) img.className = "active";
+    img.addEventListener("click", function (event) {
+      event.stopPropagation();
+      toggleChamp(id);
+      render();
+    });
     icons.append(img);
   }
   wrap.append(name, icons);
@@ -213,6 +280,7 @@ function render() {
     gamePatch = name;
     render();
   });
+  renderChampChips();
   const rows = listMatches();
   els.range.textContent = rows.length.toLocaleString() + " matches";
   renderAcc(rows);
@@ -264,6 +332,63 @@ function render() {
   }
 }
 
+function renderChampChips() {
+  if (!els.champChips) return;
+  els.champChips.innerHTML = "";
+  els.champChips.hidden = !champFilters.length;
+  for (let i = 0; i < champFilters.length; i += 1) {
+    const id = champFilters[i];
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "active";
+    const img = document.createElement("img");
+    img.src = portrait(id);
+    img.alt = "";
+    button.append(img, document.createTextNode(champName(id)));
+    button.addEventListener("click", function () {
+      toggleChamp(id);
+      render();
+    });
+    els.champChips.append(button);
+  }
+}
+
+function hideChampMenu() {
+  if (!els.champMenu) return;
+  els.champMenu.hidden = true;
+  els.champMenu.innerHTML = "";
+}
+
+function renderChampMenu() {
+  if (!els.champMenu || !els.champs) return;
+  const hits = searchChamps(els.champs.value);
+  els.champMenu.innerHTML = "";
+  if (!hits.length) {
+    els.champMenu.hidden = true;
+    return;
+  }
+  for (let i = 0; i < hits.length; i += 1) {
+    const id = hits[i];
+    const button = document.createElement("button");
+    button.type = "button";
+    const img = document.createElement("img");
+    img.src = portrait(id);
+    img.alt = "";
+    button.append(img, document.createTextNode(champName(id)));
+    button.addEventListener("mousedown", function (event) {
+      event.preventDefault();
+    });
+    button.addEventListener("click", function () {
+      toggleChamp(id);
+      els.champs.value = "";
+      hideChampMenu();
+      render();
+    });
+    els.champMenu.append(button);
+  }
+  els.champMenu.hidden = false;
+}
+
 function showApp() {
   els.boot.classList.add("is-hidden");
   els.boot.hidden = true;
@@ -287,10 +412,33 @@ function boot() {
     if (params.get("league")) league = params.get("league");
     if (params.get("window")) windowKey = params.get("window");
     if (params.get("patch")) gamePatch = params.get("patch");
+    champFilters = parseChamps(params.get("champ"));
     els.search.addEventListener("input", function () {
       search = els.search.value;
       render();
     });
+    if (els.champs) {
+      els.champs.addEventListener("input", renderChampMenu);
+      els.champs.addEventListener("focus", renderChampMenu);
+      els.champs.addEventListener("blur", function () {
+        setTimeout(hideChampMenu, 120);
+      });
+      els.champs.addEventListener("keydown", function (event) {
+        if (event.key === "Escape") {
+          els.champs.value = "";
+          hideChampMenu();
+          return;
+        }
+        if (event.key !== "Enter") return;
+        const hits = searchChamps(els.champs.value);
+        if (!hits.length) return;
+        event.preventDefault();
+        toggleChamp(hits[0]);
+        els.champs.value = "";
+        hideChampMenu();
+        render();
+      });
+    }
     render();
     showApp();
     els.search.focus();
