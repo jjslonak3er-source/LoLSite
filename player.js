@@ -191,9 +191,14 @@ function searchTags(q) {
   return out;
 }
 
+function setHidden(el, hide) {
+  if (!el) return;
+  el.hidden = !!hide;
+}
+
 function hideTagMenu() {
   if (!els.tagMenu) return;
-  els.tagMenu.hidden = true;
+  setHidden(els.tagMenu, true);
   els.tagMenu.innerHTML = "";
 }
 
@@ -210,7 +215,7 @@ function renderTagMenu() {
   const hits = searchTags(els.tagSearch.value);
   els.tagMenu.innerHTML = "";
   if (!hits.length) {
-    els.tagMenu.hidden = true;
+    setHidden(els.tagMenu, true);
     return;
   }
   for (let i = 0; i < hits.length; i += 1) {
@@ -226,13 +231,13 @@ function renderTagMenu() {
     });
     els.tagMenu.append(button);
   }
-  els.tagMenu.hidden = false;
+  setHidden(els.tagMenu, false);
 }
 
 function renderTagPicks(show) {
   if (!els.tagPicks) return;
   els.tagPicks.innerHTML = "";
-  els.tagPicks.hidden = !show || !tagFilters.length;
+  setHidden(els.tagPicks, !show || !tagFilters.length);
   if (!show) return;
   for (let i = 0; i < tagFilters.length; i += 1) {
     const name = tagFilters[i];
@@ -1748,10 +1753,10 @@ function setHead(root, cols, sortKey, sortDir, onSort) {
 }
 
 function renderDirectory() {
-  els.layout.classList.add("is-directory");
-  els.summary.hidden = true;
-  els.side.hidden = true;
-  els.poolTitle.textContent = "Players";
+  if (els.layout) els.layout.classList.add("is-directory");
+  setHidden(els.summary, true);
+  setHidden(els.side, true);
+  if (els.poolTitle) els.poolTitle.textContent = "Players";
   els.title.textContent = !leagues.length ? "Players" : leagues.join(" · ");
   const rows = directoryRows().filter(function (row) {
     if (!tagFilters.length) return true;
@@ -1832,9 +1837,9 @@ function renderDirectory() {
 }
 
 function renderChampLadder(ladder) {
-  els.layout.classList.add("is-directory");
-  els.summary.hidden = true;
-  els.side.hidden = true;
+  if (els.layout) els.layout.classList.add("is-directory");
+  setHidden(els.summary, true);
+  setHidden(els.side, true);
   const title = ladder.title || "Champion";
   els.poolTitle.textContent = title;
   els.title.textContent = title;
@@ -1911,7 +1916,8 @@ function tagPills(tags, max) {
 }
 
 function renderSummary(stats) {
-  els.summary.hidden = false;
+  if (!els.summary) return;
+  setHidden(els.summary, false);
   els.summary.innerHTML = "";
   const roleKey = role === "All" ? stats.role : role.toLowerCase();
   const tags = playerTags(stats.name, roleKey, stats);
@@ -2015,7 +2021,8 @@ function renderPool(rows) {
 }
 
 function renderGames(rows) {
-  els.side.hidden = false;
+  if (!els.side) return;
+  setHidden(els.side, false);
   const shown = champFilter
     ? rows.filter(function (row) {
         return row.champ === champFilter;
@@ -2107,7 +2114,8 @@ function renderChips() {
     render();
   });
   const showTags = !player && !findChampQuery(search);
-  if (els.tagCombo) els.tagCombo.hidden = !showTags;
+  setHidden(els.tagCombo, !showTags);
+  setHidden(document.getElementById("player-tags"), !showTags);
   if (showTags) {
     tagFilters = tagFilters.filter(function (name) {
       return TAG_LABELS.indexOf(name) !== -1;
@@ -2130,7 +2138,7 @@ function render() {
     els.title.textContent = player;
     document.title = player + " — Player stats";
     els.range.textContent = "0 games";
-    els.summary.hidden = true;
+    setHidden(els.summary, true);
     renderPool([]);
     renderGames([]);
     return;
@@ -2147,10 +2155,12 @@ function render() {
 }
 
 function showApp() {
-  els.boot.classList.add("is-hidden");
-  els.boot.hidden = true;
-  els.app.hidden = false;
-  els.boot.remove();
+  if (els.boot) {
+    els.boot.classList.add("is-hidden");
+    setHidden(els.boot, true);
+    els.boot.remove();
+  }
+  setHidden(els.app, false);
 }
 
 function initData() {
