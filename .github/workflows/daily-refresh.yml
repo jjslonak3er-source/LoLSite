@@ -1,0 +1,82 @@
+name: Daily data refresh
+
+on:
+  schedule:
+    - cron: "0 7 * * *"
+  workflow_dispatch:
+    inputs:
+      refresh:
+        description: "Re-scrape LoLalytics and Oracle's Elixir before publishing"
+        type: boolean
+        default: true
+  push:
+    branches: [main, master]
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - uses: actions/setup-python@v5
+        if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.refresh)
+        with:
+          python-version: "3.11"
+
+      - name: Refresh site data
+        if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.refresh)
+        run: python update.py --workers 2
+
+      - name: Commit updated bundles
+        if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.refresh)
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add \
+            champions.js \
+            counters.js \
+            winrates.js \
+            synergies.js \
+            oracles.js \
+            oracles.json \
+            pro-games.js \
+            player-ratings.js \
+            ratings/player_ratings.json
+          if git diff --staged --quiet; then
+            echo "No data changes."
+          else
+            git commit -m "data: daily refresh"
+            git push
+          fi
+
+      - name: Stage static site
+        run: |
+          mkdir -p _site
+          cp -f *.html *.css *.js _site/
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+  publish:
+    needs: refresh
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - id: deploy
+        uses: actions/deploy-pages@v4
