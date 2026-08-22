@@ -17,7 +17,7 @@ const TAG_SITUATION_MIN = 4;
 const TAG_BEHIND = -1000;
 const TAG_AHEAD = 1000;
 const TAG_MAX = 7;
-const CHAMP_MIN_GAMES = 3;
+const CHAMP_MIN_GAMES = 2;
 const TAG_LABELS = [
   "Lane dominant",
   "Lane loser",

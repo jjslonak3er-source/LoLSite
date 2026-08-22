@@ -15,6 +15,10 @@ const SHARP_COUNTER_DELTA = -2;
 const META_PRIOR = 18;
 const META_MIN_GAMES = 8;
 const META_WR_PRIOR = 24;
+const META_POP_PRIOR = 4;
+const META_TEAM_POP_PRIOR = 6;
+const META_TEAM_WR_PRIOR = 6;
+const CHAMP_MIN_GAMES = 2;
 const HIGH_META_SHARE = 0.3;
 const HIGH_META_MIN = 6;
 const INTO_MIN_MATCHUPS = 2;
@@ -132,7 +136,7 @@ function champPlayerRows(id) {
       };
     })
     .filter(function (row) {
-      return row.g >= 3;
+      return row.g >= CHAMP_MIN_GAMES;
     });
   rows.sort(function (a, b) {
     if (a.s != null && b.s != null && b.s !== a.s) return b.s - a.s;
@@ -227,7 +231,7 @@ function searchTeams(q) {
   return out;
 }
 
-function filteredGames() {
+function filteredGames(ignoreTeam) {
   const cutoff = cutoffDate();
   const rows = bundle.games || [];
   const out = [];
@@ -236,7 +240,7 @@ function filteredGames() {
     if (league !== "All" && game.l !== league) continue;
     if (cutoff && game.d < cutoff) continue;
     if (gamePatch !== "All" && game.p !== gamePatch) continue;
-    if (!gameHasTeam(game)) continue;
+    if (!ignoreTeam && !gameHasTeam(game)) continue;
     out.push(game);
   }
   return out;
@@ -354,9 +358,10 @@ function soloTally() {
   };
 }
 
-function tally() {
+function tally(ignoreTeam) {
   if (SOLO) return soloTally();
-  const games = filteredGames();
+  const games = filteredGames(ignoreTeam);
+  const wantTeam = ignoreTeam ? "" : team;
   const stats = {};
   const matchupsLane = {};
   const matchupsAll = {};
@@ -379,7 +384,7 @@ function tally() {
       ];
       for (let s = 0; s < 2; s += 1) {
         const us = both[s];
-        if (team && us.team !== team) continue;
+        if (wantTeam && us.team !== wantTeam) continue;
         if (!stats[us.id]) stats[us.id] = {};
         if (!stats[us.id][ROLE_KEYS[i]]) stats[us.id][ROLE_KEYS[i]] = { picks: 0, wins: 0 };
         stats[us.id][ROLE_KEYS[i]].picks += 1;
@@ -459,10 +464,18 @@ function spikeExposure(map, rates) {
   return den ? hurt / den : 0;
 }
 
-function metaScore(id, picks, winRate, data, rates) {
-  const pop = data.games ? picks / data.games : 0;
-  const popPart = META_POP * pop * 100;
-  const wrShrink = picks / (picks + META_WR_PRIOR);
+function metaPriors(forTeam) {
+  if (forTeam) return { pop: META_TEAM_POP_PRIOR, wr: META_TEAM_WR_PRIOR };
+  return { pop: META_POP_PRIOR, wr: META_WR_PRIOR };
+}
+
+function metaScore(id, picks, winRate, data, rates, gamesN, forTeam) {
+  const priors = metaPriors(forTeam);
+  const games = gamesN != null ? gamesN : data.games;
+  const pop = games ? picks / games : 0;
+  const popShrink = picks / (picks + priors.pop);
+  const popPart = META_POP * pop * 100 * popShrink;
+  const wrShrink = picks / (picks + priors.wr);
   const wrPart = META_WR * wrShrink * (winRate - 0.5) * 100;
   const vsMap = (role === "All" ? data.matchupsAll : data.matchupsLane)[id];
   const spikeMap = (data.matchupsLane && data.matchupsLane[id]) || vsMap;
@@ -584,26 +597,46 @@ function intoHighMeta(id, usRole, data, weights) {
   return num / den;
 }
 
-function attachPotential(rows, data) {
-  const weights = highMetaWeights(rows);
-  const metas = [];
-  const intos = [];
-  for (let i = 0; i < rows.length; i += 1) {
-    const row = rows[i];
-    row.intoMeta = intoHighMeta(row.id, row.role, data, weights);
-    metas.push(row.meta);
-    intos.push(row.intoMeta);
+let overallMemo = { key: "", data: null, rows: null };
+
+function overallBoard() {
+  const key = [league, windowKey, gamePatch, role, cutoffDate() || "", (bundle && bundle.to) || ""].join("|");
+  if (overallMemo.key === key) return overallMemo;
+  const data = tally(true);
+  overallMemo = { key: key, data: data, rows: scoreRows(data, false) };
+  return overallMemo;
+}
+
+function attachPotential(rows, data, overall) {
+  const pool = overall && overall.rows && overall.rows.length ? overall.rows : rows;
+  const poolData = overall && overall.data ? overall.data : data;
+  const weights = highMetaWeights(pool);
+  const poolRates = pickRates(poolData);
+  const useTeam = !!(overall && team);
+  const poolIntos = [];
+  for (let i = 0; i < pool.length; i += 1) {
+    poolIntos.push(intoHighMeta(pool[i].id, pool[i].role, poolData, weights));
   }
-  const metaStat = meanStd(metas);
-  const intoStat = meanStd(intos);
+  const intoStat = meanStd(poolIntos);
+  const metaStat = meanStd(
+    pool.map(function (row) {
+      return row.meta;
+    })
+  );
   for (let i = 0; i < rows.length; i += 1) {
     const row = rows[i];
+    row.intoMeta = intoHighMeta(row.id, row.role, poolData, weights);
     if (row.intoMeta == null) {
       row.potential = null;
       continue;
     }
+    let compareMeta = row.meta;
+    if (useTeam) {
+      compareMeta = metaScore(row.id, row.picks, row.winRate, poolData, poolRates, data.games, true).meta;
+    }
+    row.baseMeta = compareMeta;
     const intoZ = (row.intoMeta - intoStat.mean) / intoStat.std;
-    const metaZ = (row.meta - metaStat.mean) / metaStat.std;
+    const metaZ = (compareMeta - metaStat.mean) / metaStat.std;
     row.potential = intoZ - metaZ;
   }
 }
@@ -622,8 +655,7 @@ function primaryRole(counts) {
   return best;
 }
 
-function buildRows(data) {
-  const q = search.trim().toLowerCase();
+function scoreRows(data, forTeam) {
   const rows = [];
   const rates = pickRates(data);
   const ids = Object.keys(data.stats);
@@ -653,7 +685,7 @@ function buildRows(data) {
     }
     const winRate = picks ? wins / picks : 0;
     wins = Math.round(wins);
-    const score = metaScore(id, picks, winRate, data, rates);
+    const score = metaScore(id, picks, winRate, data, rates, data.games, forTeam);
     rows.push({
       id: id,
       name: champName(id),
@@ -668,7 +700,13 @@ function buildRows(data) {
       potential: null,
     });
   }
-  attachPotential(rows, data);
+  return rows;
+}
+
+function buildRows(data, overall) {
+  const q = search.trim().toLowerCase();
+  const rows = scoreRows(data, !!(team && !SOLO));
+  attachPotential(rows, data, overall);
   const shown = [];
   for (let i = 0; i < rows.length; i += 1) {
     const row = rows[i];
@@ -800,7 +838,8 @@ function renderChips() {
 }
 
 function renderTable(data) {
-  const rows = buildRows(data);
+  const overall = team && !SOLO ? overallBoard() : null;
+  const rows = buildRows(data, overall);
   els.body.innerHTML = "";
   if (!rows.length) {
     const tr = document.createElement("tr");
@@ -863,8 +902,9 @@ function renderTable(data) {
         "into high-meta" +
         (SOLO ? " " : " (LoLalytics) ") +
         (row.intoMeta == null ? "—" : fmtDelta(row.intoMeta)) +
-        "\ncurrent meta " +
-        fmtDelta(row.meta);
+        "\n" +
+        (team ? "team pick/WR vs overall meta " : "current meta ") +
+        fmtDelta(row.baseMeta != null ? row.baseMeta : row.meta);
     }
 
     const picks = document.createElement("td");
@@ -1004,7 +1044,7 @@ function renderPlayers() {
     els.playerSub.textContent =
       champName(selected) +
       (team ? " · " + team : league === "All" ? "" : " · " + league) +
-      " · 3+ games";
+      " · 2+ games";
   }
   body.innerHTML = "";
   if (!rows.length) {
@@ -1012,7 +1052,7 @@ function renderPlayers() {
     const td = document.createElement("td");
     td.colSpan = 3;
     td.className = "pick-empty";
-    td.textContent = "No players with 3+ games on this champion.";
+    td.textContent = "No players with 2+ games on this champion.";
     tr.append(td);
     body.append(tr);
     return;
