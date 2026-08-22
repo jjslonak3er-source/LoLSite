@@ -12,7 +12,7 @@
       href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&family=Sora:wght@600;700&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="styles.css?v=21" />
+    <link rel="stylesheet" href="styles.css?v=24" />
   </head>
   <body>
     <div class="vignette"></div>
@@ -60,7 +60,17 @@
           <div id="player-roles" class="chips" role="tablist" aria-label="Positions"></div>
           <div id="player-windows" class="chips" role="tablist" aria-label="Time window"></div>
           <div id="player-patches" class="chips" role="tablist" aria-label="Patches"></div>
-          <div id="player-tags" class="chips" role="tablist" aria-label="Tags"></div>
+          <div id="player-tag-combo" class="filter-combo">
+            <input
+              id="player-tag-search"
+              type="search"
+              placeholder="Filter tags"
+              autocomplete="off"
+              spellcheck="false"
+            />
+            <div id="player-tag-menu" class="filter-menu" hidden></div>
+          </div>
+          <div id="player-tag-picks" class="chips filter-picks" hidden></div>
         </div>
         <div id="player-summary" class="player-summary" hidden></div>
         <div class="pro-board player-board">

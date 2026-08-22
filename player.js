@@ -12,6 +12,7 @@ const TAG_IQR_LOOSE = 0.3;
 const TAG_STREAK_MIN = 3;
 const TAG_TEAM_MATES = 3;
 const TAG_BOOST_MAX = 5;
+const TAG_DEAD_MAX = 2;
 const TAG_TEAM_GAP = 6;
 const TAG_SITUATION_MIN = 4;
 const TAG_BEHIND = -1000;
@@ -68,7 +69,10 @@ const els = {
   roles: document.getElementById("player-roles"),
   windows: document.getElementById("player-windows"),
   patches: document.getElementById("player-patches"),
-  tags: document.getElementById("player-tags"),
+  tagCombo: document.getElementById("player-tag-combo"),
+  tagSearch: document.getElementById("player-tag-search"),
+  tagMenu: document.getElementById("player-tag-menu"),
+  tagPicks: document.getElementById("player-tag-picks"),
   summary: document.getElementById("player-summary"),
   poolTitle: document.getElementById("pool-title"),
   poolHead: document.getElementById("pool-head"),
@@ -173,6 +177,74 @@ function toggleSel(list, name, options) {
   if (!found) next.push(name);
   if (options && next.length === options.length) return [];
   return next;
+}
+
+function searchTags(q) {
+  const needle = String(q || "").trim().toLowerCase();
+  const out = [];
+  for (let i = 0; i < TAG_LABELS.length; i += 1) {
+    const name = TAG_LABELS[i];
+    if (tagFilters.indexOf(name) !== -1) continue;
+    if (needle && name.toLowerCase().indexOf(needle) === -1) continue;
+    out.push(name);
+  }
+  return out;
+}
+
+function hideTagMenu() {
+  if (!els.tagMenu) return;
+  els.tagMenu.hidden = true;
+  els.tagMenu.innerHTML = "";
+}
+
+function pickTag(name) {
+  tagFilters = toggleSel(tagFilters, name, TAG_LABELS);
+  if (els.tagSearch) els.tagSearch.value = "";
+  syncUrl();
+  render();
+  if (els.tagSearch && document.activeElement === els.tagSearch) renderTagMenu();
+}
+
+function renderTagMenu() {
+  if (!els.tagMenu || !els.tagSearch) return;
+  const hits = searchTags(els.tagSearch.value);
+  els.tagMenu.innerHTML = "";
+  if (!hits.length) {
+    els.tagMenu.hidden = true;
+    return;
+  }
+  for (let i = 0; i < hits.length; i += 1) {
+    const name = hits[i];
+    const button = document.createElement("button");
+    button.type = "button";
+    button.textContent = name;
+    button.addEventListener("mousedown", function (event) {
+      event.preventDefault();
+    });
+    button.addEventListener("click", function () {
+      pickTag(name);
+    });
+    els.tagMenu.append(button);
+  }
+  els.tagMenu.hidden = false;
+}
+
+function renderTagPicks(show) {
+  if (!els.tagPicks) return;
+  els.tagPicks.innerHTML = "";
+  els.tagPicks.hidden = !show || !tagFilters.length;
+  if (!show) return;
+  for (let i = 0; i < tagFilters.length; i += 1) {
+    const name = tagFilters[i];
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "active";
+    button.textContent = name;
+    button.addEventListener("click", function () {
+      pickTag(name);
+    });
+    els.tagPicks.append(button);
+  }
 }
 
 function chipRowMulti(root, items, selected, onToggle) {
@@ -1407,7 +1479,16 @@ function playerTags(name, roleKey, stats, limit) {
       title: "Positive score " + fmtScore(playerScore) + " with " + fmtPct(rec.wr) + " WR",
     });
   }
-  if (mates && mates.vsBest <= -TAG_TEAM_GAP) {
+  const hasElite = tags.some(function (tag) {
+    return tag.label === "Elite";
+  });
+  if (
+    mates &&
+    mates.vsBest <= -TAG_TEAM_GAP &&
+    !hasElite &&
+    playerScore != null &&
+    playerScore <= TAG_DEAD_MAX
+  ) {
     tags.push({
       label: "Dead weight",
       tone: "down",
@@ -2026,17 +2107,13 @@ function renderChips() {
     render();
   });
   const showTags = !player && !findChampQuery(search);
-  els.tags.hidden = !showTags;
+  if (els.tagCombo) els.tagCombo.hidden = !showTags;
   if (showTags) {
     tagFilters = tagFilters.filter(function (name) {
       return TAG_LABELS.indexOf(name) !== -1;
     });
-    chipRowMulti(els.tags, ["All"].concat(TAG_LABELS), tagFilters, function (name) {
-      tagFilters = toggleSel(tagFilters, name, TAG_LABELS);
-      syncUrl();
-      render();
-    });
   }
+  renderTagPicks(showTags);
 }
 
 function render() {
@@ -2101,6 +2178,25 @@ function boot() {
       }
       render();
     });
+    if (els.tagSearch) {
+      els.tagSearch.addEventListener("input", renderTagMenu);
+      els.tagSearch.addEventListener("focus", renderTagMenu);
+      els.tagSearch.addEventListener("blur", function () {
+        setTimeout(hideTagMenu, 120);
+      });
+      els.tagSearch.addEventListener("keydown", function (event) {
+        if (event.key === "Escape") {
+          els.tagSearch.value = "";
+          hideTagMenu();
+          return;
+        }
+        if (event.key !== "Enter") return;
+        const hits = searchTags(els.tagSearch.value);
+        if (!hits.length) return;
+        event.preventDefault();
+        pickTag(hits[0]);
+      });
+    }
     render();
     showApp();
     els.search.focus();
