@@ -23,9 +23,9 @@ FORM_PRIOR = 28.0
 TEAM_IMPACT_SHARE = 0.5
 # LCK Legend / LPL Ascend vs LCK Rise / LPL Nirvana.
 # Low-group games count less toward form, and the tier term itself
-# is a hard haircut (~−4 on a fully Rise/Nirvana slate).
+# is a hard haircut (~−5 on a fully Rise/Nirvana slate).
 TIER_GAME_WEIGHT = {"high": 1.25, "low": 0.18, "open": 1.0}
-TIER_SCORE = {"high": 0.18, "low": -2.60, "open": 0.0}
+TIER_SCORE = {"high": 0.18, "low": -3.15, "open": 0.0}
 # After this many idle days, score starts fading. Half-life is extra idle time.
 # The live ladder (z-scores and the ~0 center) still uses recently-active
 # players only, so adding idle names does not reshuffle Tarzan/Viper.
@@ -41,7 +41,7 @@ CHAMP_MIN_PLAYERS = 1
 REGION_SCALE = 5.0
 REGION_FLATTEN = 0.45
 # Extra haircut after internationals: LCS/LEC still trail LCK/LPL.
-REGION_ADJUST = {"LEC": -0.07, "LCS": -0.06}
+REGION_ADJUST = {"LEC": -0.50, "LCS": -0.44}
 TEAM_RIDGE = 6.0
 TEAM_SHRINK = 4.0
 TEAM_MIN_GAMES = 2.0
