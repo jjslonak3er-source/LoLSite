@@ -1238,6 +1238,16 @@ select:hover,
   background: rgba(197, 208, 216, 0.1);
 }
 
+.pro-table td.game-no {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.pro-table tbody tr.series-start td {
+  border-top-color: var(--line-strong);
+}
+
 .pro-champ {
   display: flex;
   align-items: center;

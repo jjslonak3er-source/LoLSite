@@ -52,7 +52,70 @@ let champRole = "";
 let playerFilters = [];
 let patch = "";
 let champMap = new Map();
+let seriesMeta = {};
 const predictCache = {};
+
+function seriesKey(game) {
+  const teams = [game.bt || "", game.rt || ""].sort();
+  return (game.d || "") + "|" + (game.l || "") + "|" + teams.join("|");
+}
+
+function parseGameNo(id) {
+  const match = String(id || "").match(/_game_(\d+)$/i);
+  return match ? Number(match[1]) : 0;
+}
+
+function buildSeriesMeta(games) {
+  const groups = {};
+  const meta = {};
+  for (let i = 0; i < games.length; i += 1) {
+    const game = games[i];
+    const key = seriesKey(game);
+    (groups[key] || (groups[key] = [])).push({ game: game, idx: i });
+  }
+  const keys = Object.keys(groups);
+  for (let g = 0; g < keys.length; g += 1) {
+    const list = groups[keys[g]];
+    list.sort(function (a, b) {
+      const na = parseGameNo(a.game.g);
+      const nb = parseGameNo(b.game.g);
+      if (na && nb && na !== nb) return na - nb;
+      const idCmp = String(a.game.g || "").localeCompare(String(b.game.g || ""), undefined, {
+        numeric: true,
+      });
+      if (idCmp) return idCmp;
+      return a.idx - b.idx;
+    });
+    let rank = list[0].idx;
+    for (let i = 1; i < list.length; i += 1) if (list[i].idx < rank) rank = list[i].idx;
+    for (let i = 0; i < list.length; i += 1) {
+      meta[list[i].game.g] = {
+        n: parseGameNo(list[i].game.g) || i + 1,
+        of: list.length,
+        key: keys[g],
+        rank: rank,
+      };
+    }
+  }
+  return meta;
+}
+
+function sortMatches(rows) {
+  return rows.slice().sort(function (a, b) {
+    const da = a.d || "";
+    const db = b.d || "";
+    if (da !== db) return db.localeCompare(da);
+    const ma = seriesMeta[a.g] || {};
+    const mb = seriesMeta[b.g] || {};
+    const ra = ma.rank != null ? ma.rank : 0;
+    const rb = mb.rank != null ? mb.rank : 0;
+    if (ra !== rb) return ra - rb;
+    const na = ma.n || 0;
+    const nb = mb.n || 0;
+    if (na !== nb) return na - nb;
+    return String(a.g || "").localeCompare(String(b.g || ""), undefined, { numeric: true });
+  });
+}
 
 function portrait(id) {
   return DDRAGON + "/cdn/" + patch + "/img/champion/" + id + ".png";
@@ -362,7 +425,7 @@ function listMatches() {
     if (!playersOk) continue;
     out.push(game);
   }
-  return out;
+  return sortMatches(out);
 }
 
 function lineupOf(game, side) {
@@ -680,7 +743,7 @@ function render() {
   if (!rows.length) {
     const tr = document.createElement("tr");
     const td = document.createElement("td");
-    td.colSpan = 6;
+    td.colSpan = 7;
     td.className = "pick-empty";
     td.textContent = "No matches match that filter.";
     tr.append(td);
@@ -693,10 +756,17 @@ function render() {
     tr.addEventListener("click", function () {
       location.href = "match.html?g=" + encodeURIComponent(game.g);
     });
+    const meta = seriesMeta[game.g] || {};
+    const prev = i > 0 ? seriesMeta[rows[i - 1].g] || {} : {};
+    if (i === 0 || meta.key !== prev.key) tr.classList.add("series-start");
     const date = document.createElement("td");
     date.textContent = game.d || "—";
     const leagueCell = document.createElement("td");
     leagueCell.textContent = game.l || "—";
+    const gameNo = document.createElement("td");
+    gameNo.className = "game-no";
+    gameNo.textContent = meta.n ? "G" + meta.n : "—";
+    if (meta.of > 1) gameNo.title = "Game " + meta.n + " of " + meta.of;
     const patchCell = document.createElement("td");
     patchCell.textContent = game.p || "—";
     const winner = document.createElement("td");
@@ -715,6 +785,7 @@ function render() {
     tr.append(
       date,
       leagueCell,
+      gameNo,
       patchCell,
       champCell(game.b, game.bt, game.w === 1),
       champCell(game.r, game.rt, game.w === 0),
@@ -743,6 +814,7 @@ function boot() {
     );
     bundle = window.RIFT_PRO_GAMES || bundle;
     if (!bundle.games || !bundle.games.length) throw new Error("Missing pro game logs");
+    seriesMeta = buildSeriesMeta(bundle.games);
     const params = new URLSearchParams(location.search);
     if (params.get("league")) league = params.get("league");
     if (params.get("window")) windowKey = params.get("window");

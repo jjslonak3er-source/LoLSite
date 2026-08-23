@@ -76,6 +76,23 @@ function sideOf(game, name) {
   return "";
 }
 
+function firstFor(x, key, side) {
+  const val = x && x[key];
+  if (val !== 0 && val !== 1) return null;
+  return side === "b" ? val === 1 : val === 0;
+}
+
+function tallyFirst(rec, x, key, side) {
+  const hit = firstFor(x, key, side);
+  if (hit == null) return;
+  rec[key + "N"] += 1;
+  if (hit) rec[key] += 1;
+}
+
+function firstRate(hits, n) {
+  return n ? hits / n : null;
+}
+
 function collectTeams() {
   const games = filteredGames();
   const map = {};
@@ -100,11 +117,20 @@ function collectTeams() {
         gdN: 0,
         champs: {},
         players: {},
+        fb: 0,
+        fbN: 0,
+        ft: 0,
+        ftN: 0,
+        fd: 0,
+        fdN: 0,
       });
       rec.games.push(game);
       rec.leagues[game.l] = (rec.leagues[game.l] || 0) + 1;
       rec.wins += side.win ? 1 : 0;
       const x = game.x || {};
+      tallyFirst(rec, x, "fb", side.key);
+      tallyFirst(rec, x, "ft", side.key);
+      tallyFirst(rec, x, "fd", side.key);
       for (let r = 0; r < 5; r += 1) {
         const pname = side.names[r];
         if (!pname) continue;
@@ -200,6 +226,9 @@ function teamDirectory() {
       wins: rec.wins,
       winRate: n ? rec.wins / n : 0,
       kda: kdaRatio(rec.k, rec.d, rec.a),
+      fb: firstRate(rec.fb, rec.fbN),
+      ft: firstRate(rec.ft, rec.ftN),
+      fd: firstRate(rec.fd, rec.fdN),
       champs: topKeys(rec.champs, 5),
       score: teamScore(rec.name, rec.games),
       rec: rec,
@@ -290,6 +319,9 @@ function renderTeamDirectory() {
       { key: "champ", label: "Pool" },
       { key: "games", label: "Games", num: true },
       { key: "winRate", label: "WR", num: true },
+      { key: "fb", label: "FB%", num: true },
+      { key: "ft", label: "FT%", num: true },
+      { key: "fd", label: "FD%", num: true },
       { key: "kda", label: "KDA", num: true },
     ],
     dirSort,
@@ -304,7 +336,7 @@ function renderTeamDirectory() {
     }
   );
   if (!rows.length) {
-    emptyRow(teamEls.body, 7, "No teams match that filter.");
+    emptyRow(teamEls.body, 10, "No teams match that filter.");
     return;
   }
   teamEls.body.innerHTML = "";
@@ -333,10 +365,19 @@ function renderTeamDirectory() {
     const wr = document.createElement("td");
     wr.className = "num " + (row.winRate >= 0.5 ? "wr-up" : "wr-down");
     wr.textContent = fmtPct(row.winRate);
+    const fb = document.createElement("td");
+    fb.className = "num " + (row.fb >= 0.5 ? "wr-up" : row.fb != null ? "wr-down" : "");
+    fb.textContent = fmtPct(row.fb);
+    const ft = document.createElement("td");
+    ft.className = "num " + (row.ft >= 0.5 ? "wr-up" : row.ft != null ? "wr-down" : "");
+    ft.textContent = fmtPct(row.ft);
+    const fd = document.createElement("td");
+    fd.className = "num " + (row.fd >= 0.5 ? "wr-up" : row.fd != null ? "wr-down" : "");
+    fd.textContent = fmtPct(row.fd);
     const kda = document.createElement("td");
     kda.className = "num";
     kda.textContent = fmtRate(row.kda);
-    tr.append(name, score, leagueCell, pool, games, wr, kda);
+    tr.append(name, score, leagueCell, pool, games, wr, fb, ft, fd, kda);
     teamEls.body.append(tr);
   }
 }
@@ -352,7 +393,6 @@ function renderTeamDetail() {
   }
   teamEls.layout.classList.remove("is-directory");
   const n = rec.games.length;
-  const recent = lastTeamGames(rec.games);
   const score = teamScore(rec.name, rec.games);
   const wr = n ? rec.wins / n : 0;
   teamEls.title.textContent = rec.name;
@@ -366,7 +406,12 @@ function renderTeamDetail() {
   teamEls.summary.append(tile("WR", fmtPct(wr), wr >= 0.5 ? "up" : "down"));
   teamEls.summary.append(tile("KDA", fmtRate(kdaRatio(rec.k, rec.d, rec.a))));
   teamEls.summary.append(tile("GD@15", fmtDiff(rec.gdN ? rec.gd / rec.gdN : 0), rec.gd > 0 ? "up" : rec.gd < 0 ? "down" : ""));
-  teamEls.summary.append(tile("Last 15", String(recent.length)));
+  const fb = firstRate(rec.fb, rec.fbN);
+  const ft = firstRate(rec.ft, rec.ftN);
+  const fd = firstRate(rec.fd, rec.fdN);
+  teamEls.summary.append(tile("FB%", fmtPct(fb), fb >= 0.5 ? "up" : fb != null ? "down" : ""));
+  teamEls.summary.append(tile("FT%", fmtPct(ft), ft >= 0.5 ? "up" : ft != null ? "down" : ""));
+  teamEls.summary.append(tile("FD%", fmtPct(fd), fd >= 0.5 ? "up" : fd != null ? "down" : ""));
 
   const roster = rosterRows(rec);
   teamEls.boardTitle.textContent = "Roster";
@@ -426,10 +471,10 @@ function renderTeamDetail() {
     }
   }
 
-  teamEls.side.hidden = false;
-  teamEls.gamesSub.textContent = recent.length + " of last " + LAST_GAMES;
-  teamEls.gamesBody.innerHTML = "";
   const shown = rec.games.slice(0, 40);
+  teamEls.side.hidden = false;
+  teamEls.gamesSub.textContent = shown.length + " games";
+  teamEls.gamesBody.innerHTML = "";
   for (let i = 0; i < shown.length; i += 1) {
     const game = shown[i];
     const mine = sideOf(game, rec.name);
