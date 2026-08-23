@@ -41,7 +41,7 @@ CHAMP_MIN_PLAYERS = 1
 REGION_SCALE = 5.0
 REGION_FLATTEN = 0.45
 # Extra haircut after internationals: LCS/LEC still trail LCK/LPL.
-REGION_ADJUST = {"LEC": -1.40, "LCS": -1.25}
+REGION_ADJUST = {"LEC": -4.60, "LCS": -4.45}
 TEAM_RIDGE = 6.0
 TEAM_SHRINK = 4.0
 TEAM_MIN_GAMES = 2.0
