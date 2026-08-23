@@ -142,8 +142,7 @@ function addDays(iso, days) {
 }
 
 function cutoffDate() {
-  if (windowKey !== "recent" || !bundle.to) return "";
-  return addDays(bundle.to, -RECENT_DAYS);
+  return RIFT_WINDOW.cutoff(bundle.to, addDays);
 }
 
 function comparePatch(a, b) {
@@ -708,23 +707,10 @@ function render() {
     league = name;
     render();
   });
-  els.windows.innerHTML = "";
-  const windows = [
-    { id: "recent", label: "Last 60 days" },
-    { id: "season", label: "Full season" },
-  ];
-  for (let i = 0; i < windows.length; i += 1) {
-    const item = windows[i];
-    const button = document.createElement("button");
-    button.type = "button";
-    button.textContent = item.label;
-    if (item.id === windowKey) button.className = "active";
-    button.addEventListener("click", function () {
-      windowKey = item.id;
-      render();
-    });
-    els.windows.append(button);
-  }
+  RIFT_WINDOW.mount(els.windows, function () {
+    windowKey = RIFT_WINDOW.key;
+    render();
+  });
   const patches = listPatches(windowMatches());
   if (gamePatch !== "All" && patches.indexOf(gamePatch) === -1) gamePatch = "All";
   chipRow(els.patches, ["All"].concat(patches), gamePatch, function (name) {
@@ -817,7 +803,10 @@ function boot() {
     seriesMeta = buildSeriesMeta(bundle.games);
     const params = new URLSearchParams(location.search);
     if (params.get("league")) league = params.get("league");
-    if (params.get("window")) windowKey = params.get("window");
+    if (params.get("window")) {
+      RIFT_WINDOW.init(params.get("window"));
+      windowKey = RIFT_WINDOW.key;
+    }
     if (params.get("patch")) gamePatch = params.get("patch");
     teamFilters = parseList(params.get("team")).slice(0, 2);
     lastTeam = teamFilters[teamFilters.length - 1] || "";

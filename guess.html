@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Whisper Draft — Guess the pick</title>
+    <meta name="description" content="Guess the hidden champion in a real pro draft. Fearless picks are shown after game 1." />
+    <link rel="preconnect" href="https://ddragon.leagueoflegends.com" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&family=Sora:wght@600;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="styles.css?v=29" />
+  </head>
+  <body class="guess-page">
+    <div class="vignette"></div>
+    <div id="boot" class="boot">
+      <div class="boot-mark">W</div>
+      <h1>Whisper Draft</h1>
+      <p id="boot-status">Loading drafts…</p>
+    </div>
+
+    <div id="app" class="app guess-app" hidden>
+      <header class="topbar">
+        <div class="brand">
+          <span class="brand-mark">W</span>
+          <div>
+            <strong>Whisper Draft</strong>
+            <nav class="site-nav">
+              <a href="index.html">Draft</a>
+              <a href="tier.html">Tiers</a>
+              <a href="guess.html" aria-current="page">Guess</a>
+              <a href="meta.html">Meta</a>
+              <a href="pro.html">Pro-Meta</a>
+              <a href="matches.html">Matches</a>
+              <a href="player.html">Players</a>
+              <a href="team.html">Teams</a>
+            </nav>
+          </div>
+        </div>
+        <div class="phase-wrap">
+          <p class="phase-kicker">Guess the pick</p>
+          <h2 id="guess-title" class="phase-title done">Who is missing?</h2>
+        </div>
+        <div class="top-actions">
+          <span id="guess-score" class="game-label">0 correct</span>
+          <button id="guess-skip" type="button">Skip</button>
+        </div>
+      </header>
+
+      <main class="guess-main">
+        <section id="guess-fearless" class="guess-fearless" hidden>
+          <p class="phase-kicker">Already picked this series</p>
+          <div id="guess-fearless-row" class="guess-fearless-row"></div>
+        </section>
+        <section class="board guess-draft">
+          <section class="team team-blue" aria-label="Blue side">
+            <header class="team-head">
+              <strong id="guess-blue-name">Blue</strong>
+              <span>Blue</span>
+            </header>
+            <div id="guess-blue-bans" class="bans"></div>
+            <div id="guess-blue-picks" class="picks"></div>
+          </section>
+          <section class="match-mid guess-mid">
+            <p id="guess-meta" class="result"></p>
+            <p id="guess-hint" class="muted"></p>
+            <p id="guess-feedback" class="guess-feedback"></p>
+          </section>
+          <section class="team team-red" aria-label="Red side">
+            <header class="team-head">
+              <strong id="guess-red-name">Red</strong>
+              <span>Red</span>
+            </header>
+            <div id="guess-red-bans" class="bans"></div>
+            <div id="guess-red-picks" class="picks"></div>
+          </section>
+        </section>
+        <section class="guess-pool" aria-label="Champion guesses">
+          <div class="pool-tools">
+            <input
+              id="guess-search"
+              type="search"
+              placeholder="Search champions"
+              autocomplete="off"
+              spellcheck="false"
+            />
+            <div id="guess-roles" class="chips" role="tablist" aria-label="Positions"></div>
+          </div>
+          <div id="guess-grid" class="grid"></div>
+        </section>
+      </main>
+    </div>
+
+    <script src="champions.js"></script>
+    <script src="winrates.js"></script>
+    <script src="pro-games.js"></script>
+    <script src="guess.js?v=1"></script>
+  </body>
+</html>

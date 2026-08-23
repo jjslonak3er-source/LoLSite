@@ -91,7 +91,8 @@ let bundle = { games: [] };
 let player = params.get("player") || "";
 let leagues = parseSel(params.get("league"));
 let role = params.get("role") || "All";
-let windowKey = params.get("window") || "recent";
+RIFT_WINDOW.init(params.get("window"));
+let windowKey = RIFT_WINDOW.key;
 let patches = parseSel(params.get("patch"));
 let tagFilters = parseSel(params.get("tag"));
 let search = "";
@@ -116,8 +117,7 @@ function addDays(iso, days) {
 }
 
 function cutoffDate() {
-  if (windowKey !== "recent" || !bundle.to) return "";
-  return addDays(bundle.to, -RECENT_DAYS);
+  return RIFT_WINDOW.cutoff(bundle.to, addDays);
 }
 
 function comparePatch(a, b) {
@@ -1087,7 +1087,7 @@ function tagPeerLabel(roleKey) {
   const bits = [(roleKey || "").toUpperCase() || "role"];
   if (leagues.length) bits.push(leagues.join("/"));
   else bits.push("all leagues");
-  if (windowKey === "recent") bits.push("last 60d");
+  if (RIFT_WINDOW.isRecent()) bits.push("last " + RIFT_WINDOW.days + "d");
   if (patches.length) bits.push(patches.join("/"));
   return bits.join(" · ");
 }
@@ -1669,7 +1669,7 @@ function syncUrl() {
   else url.searchParams.delete("player");
   url.searchParams.set("league", formatSel(leagues));
   url.searchParams.set("role", role);
-  url.searchParams.set("window", windowKey);
+  url.searchParams.set("window", RIFT_WINDOW.param());
   url.searchParams.set("patch", formatSel(patches));
   url.searchParams.set("tag", formatSel(tagFilters));
   history.replaceState({}, "", url);
@@ -2053,7 +2053,7 @@ function renderGames(rows) {
             "&league=" +
             encodeURIComponent(formatSel(leagues)) +
             "&window=" +
-            encodeURIComponent(windowKey) +
+            encodeURIComponent(RIFT_WINDOW.param()) +
             "&patch=" +
             encodeURIComponent(formatSel(patches))
         );
@@ -2086,24 +2086,11 @@ function renderChips() {
     syncUrl();
     render();
   });
-  els.windows.innerHTML = "";
-  const windows = [
-    { id: "recent", label: "Last 60 days" },
-    { id: "season", label: "Full season" },
-  ];
-  for (let i = 0; i < windows.length; i += 1) {
-    const item = windows[i];
-    const button = document.createElement("button");
-    button.type = "button";
-    button.textContent = item.label;
-    if (item.id === windowKey) button.className = "active";
-    button.addEventListener("click", function () {
-      windowKey = item.id;
-      syncUrl();
-      render();
-    });
-    els.windows.append(button);
-  }
+  RIFT_WINDOW.mount(els.windows, function () {
+    windowKey = RIFT_WINDOW.key;
+    syncUrl();
+    render();
+  });
   const available = listPatches(windowGames());
   patches = patches.filter(function (name) {
     return available.indexOf(name) !== -1;

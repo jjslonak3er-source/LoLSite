@@ -20,37 +20,12 @@ const teamEls = {
   layout: document.querySelector(".player-layout"),
 };
 
-const DEFAULT_DAYS = 60;
 let team = params.get("team") || "";
 let rosterSort = "role";
 let rosterDir = 1;
-let recentDays = DEFAULT_DAYS;
-let daysTimer = 0;
 
 function windowParam() {
-  return windowKey === "season" ? "season" : String(recentDays);
-}
-
-function applyWindowParam(raw) {
-  if (raw === "season") {
-    windowKey = "season";
-    return;
-  }
-  const n = parseInt(raw, 10);
-  if (n > 0) {
-    windowKey = "recent";
-    recentDays = Math.min(365, n);
-    return;
-  }
-  windowKey = "recent";
-  recentDays = DEFAULT_DAYS;
-}
-
-applyWindowParam(params.get("window"));
-
-function cutoffDate() {
-  if (windowKey !== "recent" || !bundle.to) return "";
-  return addDays(bundle.to, -recentDays);
+  return RIFT_WINDOW.param();
 }
 
 function teamSyncUrl() {
@@ -63,70 +38,12 @@ function teamSyncUrl() {
   history.replaceState({}, "", url);
 }
 
-function setDaysWindow(raw) {
-  const n = parseInt(raw, 10);
-  if (!n || n < 1) return;
-  recentDays = Math.min(365, n);
-  windowKey = "recent";
-  teamSyncUrl();
-  renderTeam();
-}
-
-function syncWindowControls() {
-  const wrap = teamEls.windows.querySelector(".window-days");
-  const input = wrap && wrap.querySelector("input");
-  const season = teamEls.windows.querySelector("[data-window='season']");
-  if (wrap) wrap.classList.toggle("active", windowKey === "recent");
-  if (season) season.classList.toggle("active", windowKey === "season");
-  if (input && document.activeElement !== input) input.value = String(recentDays);
-}
-
 function teamWindowRow() {
-  if (teamEls.windows.dataset.ready === "1") {
-    syncWindowControls();
-    return;
-  }
-  teamEls.windows.innerHTML = "";
-  const wrap = document.createElement("label");
-  wrap.className = "window-days";
-  wrap.append("Last");
-  const input = document.createElement("input");
-  input.type = "number";
-  input.min = "1";
-  input.max = "365";
-  input.step = "1";
-  input.value = String(recentDays);
-  input.setAttribute("aria-label", "Last days");
-  input.addEventListener("focus", function () {
-    windowKey = "recent";
-    syncWindowControls();
-  });
-  input.addEventListener("input", function () {
-    windowKey = "recent";
-    syncWindowControls();
-    clearTimeout(daysTimer);
-    daysTimer = setTimeout(function () {
-      setDaysWindow(input.value);
-    }, 350);
-  });
-  input.addEventListener("change", function () {
-    clearTimeout(daysTimer);
-    setDaysWindow(input.value);
-  });
-  wrap.append(input, "days");
-  const season = document.createElement("button");
-  season.type = "button";
-  season.dataset.window = "season";
-  season.textContent = "Full season";
-  season.addEventListener("click", function () {
-    clearTimeout(daysTimer);
-    windowKey = "season";
+  RIFT_WINDOW.mount(teamEls.windows, function () {
+    windowKey = RIFT_WINDOW.key;
     teamSyncUrl();
     renderTeam();
   });
-  teamEls.windows.append(wrap, season);
-  teamEls.windows.dataset.ready = "1";
-  syncWindowControls();
 }
 
 function teamChips() {

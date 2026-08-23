@@ -24,7 +24,8 @@ let champ = params.get("champ") || "";
 let league = params.get("league") || "All";
 let team = params.get("team") || "";
 let role = params.get("role") || "All";
-let windowKey = params.get("window") || "recent";
+RIFT_WINDOW.init(params.get("window"));
+let windowKey = RIFT_WINDOW.key;
 let gamePatch = params.get("patch") || "All";
 
 function portrait(id) {
@@ -42,8 +43,7 @@ function addDays(iso, days) {
 }
 
 function cutoffDate() {
-  if (windowKey !== "recent" || !bundle.to) return "";
-  return addDays(bundle.to, -RECENT_DAYS);
+  return RIFT_WINDOW.cutoff(bundle.to, addDays);
 }
 
 function chipRow(root, items, current, onPick) {
@@ -119,7 +119,7 @@ function render() {
     "&league=" +
     encodeURIComponent(league) +
     "&window=" +
-    encodeURIComponent(windowKey) +
+    encodeURIComponent(RIFT_WINDOW.param()) +
     "&patch=" +
     encodeURIComponent(gamePatch) +
     (team ? "&team=" + encodeURIComponent(team) : "");
@@ -132,23 +132,10 @@ function render() {
     role = name;
     render();
   });
-  els.windows.innerHTML = "";
-  const windows = [
-    { id: "recent", label: "Last 60 days" },
-    { id: "season", label: "Full season" },
-  ];
-  for (let i = 0; i < windows.length; i += 1) {
-    const item = windows[i];
-    const button = document.createElement("button");
-    button.type = "button";
-    button.textContent = item.label;
-    if (item.id === windowKey) button.className = "active";
-    button.addEventListener("click", function () {
-      windowKey = item.id;
-      render();
-    });
-    els.windows.append(button);
-  }
+  RIFT_WINDOW.mount(els.windows, function () {
+    windowKey = RIFT_WINDOW.key;
+    render();
+  });
 
   const rows = listGames();
   els.body.innerHTML = "";
@@ -178,7 +165,7 @@ function render() {
             "&league=" +
             encodeURIComponent(league) +
             "&window=" +
-            encodeURIComponent(windowKey)
+            encodeURIComponent(RIFT_WINDOW.param())
         );
     });
     const cells = [

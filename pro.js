@@ -174,8 +174,7 @@ function addDays(iso, days) {
 }
 
 function cutoffDate() {
-  if (windowKey !== "recent" || !bundle.to) return "";
-  return addDays(bundle.to, -RECENT_DAYS);
+  return RIFT_WINDOW.cutoff(bundle.to, addDays);
 }
 
 function comparePatch(a, b) {
@@ -766,23 +765,10 @@ function renderChips() {
     render();
   });
   if (!SOLO) {
-    els.windows.innerHTML = "";
-    const windows = [
-      { id: "recent", label: "Last 60 days" },
-      { id: "season", label: "Full season" },
-    ];
-    for (let i = 0; i < windows.length; i += 1) {
-      const item = windows[i];
-      const button = document.createElement("button");
-      button.type = "button";
-      button.textContent = item.label;
-      if (item.id === windowKey) button.className = "active";
-      button.addEventListener("click", function () {
-        windowKey = item.id;
-        render();
-      });
-      els.windows.append(button);
-    }
+    RIFT_WINDOW.mount(els.windows, function () {
+      windowKey = RIFT_WINDOW.key;
+      render();
+    });
     const patches = listPatches(windowGames());
     if (gamePatch !== "All" && patches.indexOf(gamePatch) === -1) gamePatch = "All";
     chipRow(els.patches, ["All"].concat(patches), gamePatch, function (name) {
@@ -978,7 +964,7 @@ function renderDetail(data) {
       "&league=" +
       encodeURIComponent(league) +
       "&window=" +
-      encodeURIComponent(windowKey) +
+      encodeURIComponent(RIFT_WINDOW.param()) +
       "&patch=" +
       encodeURIComponent(gamePatch) +
       (team ? "&team=" + encodeURIComponent(team) : "");
@@ -1028,7 +1014,7 @@ function renderPlayers() {
         "&league=" +
         encodeURIComponent(league) +
         "&window=" +
-        encodeURIComponent(windowKey) +
+        encodeURIComponent(RIFT_WINDOW.param()) +
         "&patch=" +
         encodeURIComponent(gamePatch);
     });
@@ -1204,7 +1190,10 @@ function boot() {
     if (params.get("champ")) selected = params.get("champ");
     if (params.get("league")) league = params.get("league");
     if (params.get("team")) team = params.get("team");
-    if (params.get("window")) windowKey = params.get("window");
+    if (params.get("window")) {
+      RIFT_WINDOW.init(params.get("window"));
+      windowKey = RIFT_WINDOW.key;
+    }
     if (params.get("patch")) gamePatch = params.get("patch");
     bind();
     render();

@@ -2267,3 +2267,109 @@ body.tier-page.tier-modal-open {
   border-color: var(--accent);
   font-weight: 700;
 }
+
+body.guess-page {
+  overflow: auto;
+}
+
+.guess-app {
+  height: auto;
+  min-height: 100vh;
+  grid-template-rows: auto auto;
+}
+
+.guess-app .topbar {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+}
+
+.guess-app .top-actions button {
+  background: var(--panel-2);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 6px 10px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.guess-main {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px;
+}
+
+.guess-fearless {
+  padding: 10px 12px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+
+.guess-fearless-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.guess-fearless-row img {
+  width: 40px;
+  height: 40px;
+  border-radius: 6px;
+  object-fit: cover;
+  object-position: center 18%;
+  opacity: 0.72;
+}
+
+.guess-draft {
+  min-height: 430px;
+}
+
+.pick.guess-hidden {
+  border-style: dashed;
+  border-color: var(--accent);
+  background: rgba(197, 208, 216, 0.06);
+  justify-content: center;
+}
+
+.guess-mark {
+  position: absolute;
+  inset: 0 0 28px;
+  display: grid;
+  place-items: center;
+  font-family: Sora, Manrope, sans-serif;
+  font-size: 48px;
+  font-weight: 700;
+  color: var(--gold-bright);
+}
+
+.guess-feedback {
+  min-height: 1.4em;
+  margin: 8px 0 0;
+  font-weight: 700;
+}
+
+.guess-feedback.up {
+  color: #7dffb3;
+}
+
+.guess-feedback.down {
+  color: var(--red);
+}
+
+.guess-pool {
+  display: grid;
+  grid-template-rows: auto auto;
+  gap: 8px;
+  padding: 10px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+
+.guess-pool .grid {
+  overflow: visible;
+}
