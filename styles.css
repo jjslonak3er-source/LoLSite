@@ -2284,21 +2284,11 @@ body.guess-page {
   z-index: 5;
 }
 
-.guess-app .top-actions button {
-  background: var(--panel-2);
-  color: var(--text);
-  border: 1px solid var(--line);
-  border-radius: var(--radius-sm);
-  padding: 6px 10px;
-  font-size: 13px;
-  cursor: pointer;
-}
-
 .guess-main {
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  padding: 14px;
+  gap: 8px;
+  padding: 6px 14px 14px;
 }
 
 .guess-fearless {
@@ -2325,7 +2315,18 @@ body.guess-page {
 }
 
 .guess-draft {
-  min-height: 430px;
+  grid-template-columns: minmax(340px, 1fr) 220px minmax(340px, 1fr);
+  min-height: 0;
+  padding-top: 0;
+}
+
+.guess-draft .pick {
+  flex: 0 0 auto;
+  min-height: 124px;
+}
+
+.guess-draft .pick-art {
+  object-position: center 16%;
 }
 
 .pick.guess-hidden {
@@ -2438,4 +2439,21 @@ body.guess-page {
   font-size: 12px;
   font-weight: 600;
   cursor: pointer;
+}
+
+.guess-next {
+  width: 100%;
+  margin-top: 18px;
+  padding: 14px 16px;
+  border: 1px solid var(--accent);
+  border-radius: 10px;
+  background: var(--accent);
+  color: #101114;
+  font-size: 16px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.guess-next:hover {
+  filter: brightness(1.06);
 }

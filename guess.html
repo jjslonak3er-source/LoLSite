@@ -12,7 +12,7 @@
       href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&family=Sora:wght@600;700&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="styles.css?v=30" />
+    <link rel="stylesheet" href="styles.css?v=31" />
   </head>
   <body class="guess-page">
     <div class="vignette"></div>
@@ -46,7 +46,6 @@
         </div>
         <div class="top-actions">
           <span id="guess-score" class="game-label">0 correct</span>
-          <button id="guess-skip" type="button">Skip</button>
         </div>
       </header>
 
@@ -78,6 +77,7 @@
               <input id="guess-show-time" type="checkbox" />
               Show game time
             </label>
+            <button id="guess-skip" type="button" class="guess-next">Skip</button>
           </section>
           <section class="team team-red" aria-label="Red side">
             <header class="team-head">
@@ -109,6 +109,6 @@
     <script src="oracles.js"></script>
     <script src="player-ratings.js"></script>
     <script src="pro-games.js"></script>
-    <script src="guess.js?v=2"></script>
+    <script src="guess.js?v=3"></script>
   </body>
 </html>
