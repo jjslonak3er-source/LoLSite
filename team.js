@@ -20,18 +20,113 @@ const teamEls = {
   layout: document.querySelector(".player-layout"),
 };
 
+const DEFAULT_DAYS = 60;
 let team = params.get("team") || "";
 let rosterSort = "role";
 let rosterDir = 1;
+let recentDays = DEFAULT_DAYS;
+let daysTimer = 0;
+
+function windowParam() {
+  return windowKey === "season" ? "season" : String(recentDays);
+}
+
+function applyWindowParam(raw) {
+  if (raw === "season") {
+    windowKey = "season";
+    return;
+  }
+  const n = parseInt(raw, 10);
+  if (n > 0) {
+    windowKey = "recent";
+    recentDays = Math.min(365, n);
+    return;
+  }
+  windowKey = "recent";
+  recentDays = DEFAULT_DAYS;
+}
+
+applyWindowParam(params.get("window"));
+
+function cutoffDate() {
+  if (windowKey !== "recent" || !bundle.to) return "";
+  return addDays(bundle.to, -recentDays);
+}
 
 function teamSyncUrl() {
   const url = new URL(location.href);
   if (team) url.searchParams.set("team", team);
   else url.searchParams.delete("team");
   url.searchParams.set("league", formatSel(leagues));
-  url.searchParams.set("window", windowKey);
+  url.searchParams.set("window", windowParam());
   url.searchParams.set("patch", formatSel(patches));
   history.replaceState({}, "", url);
+}
+
+function setDaysWindow(raw) {
+  const n = parseInt(raw, 10);
+  if (!n || n < 1) return;
+  recentDays = Math.min(365, n);
+  windowKey = "recent";
+  teamSyncUrl();
+  renderTeam();
+}
+
+function syncWindowControls() {
+  const wrap = teamEls.windows.querySelector(".window-days");
+  const input = wrap && wrap.querySelector("input");
+  const season = teamEls.windows.querySelector("[data-window='season']");
+  if (wrap) wrap.classList.toggle("active", windowKey === "recent");
+  if (season) season.classList.toggle("active", windowKey === "season");
+  if (input && document.activeElement !== input) input.value = String(recentDays);
+}
+
+function teamWindowRow() {
+  if (teamEls.windows.dataset.ready === "1") {
+    syncWindowControls();
+    return;
+  }
+  teamEls.windows.innerHTML = "";
+  const wrap = document.createElement("label");
+  wrap.className = "window-days";
+  wrap.append("Last");
+  const input = document.createElement("input");
+  input.type = "number";
+  input.min = "1";
+  input.max = "365";
+  input.step = "1";
+  input.value = String(recentDays);
+  input.setAttribute("aria-label", "Last days");
+  input.addEventListener("focus", function () {
+    windowKey = "recent";
+    syncWindowControls();
+  });
+  input.addEventListener("input", function () {
+    windowKey = "recent";
+    syncWindowControls();
+    clearTimeout(daysTimer);
+    daysTimer = setTimeout(function () {
+      setDaysWindow(input.value);
+    }, 350);
+  });
+  input.addEventListener("change", function () {
+    clearTimeout(daysTimer);
+    setDaysWindow(input.value);
+  });
+  wrap.append(input, "days");
+  const season = document.createElement("button");
+  season.type = "button";
+  season.dataset.window = "season";
+  season.textContent = "Full season";
+  season.addEventListener("click", function () {
+    clearTimeout(daysTimer);
+    windowKey = "season";
+    teamSyncUrl();
+    renderTeam();
+  });
+  teamEls.windows.append(wrap, season);
+  teamEls.windows.dataset.ready = "1";
+  syncWindowControls();
 }
 
 function teamChips() {
@@ -41,24 +136,7 @@ function teamChips() {
     teamSyncUrl();
     renderTeam();
   });
-  teamEls.windows.innerHTML = "";
-  const windows = [
-    { id: "recent", label: "Last 60 days" },
-    { id: "season", label: "Full season" },
-  ];
-  for (let i = 0; i < windows.length; i += 1) {
-    const item = windows[i];
-    const button = document.createElement("button");
-    button.type = "button";
-    button.textContent = item.label;
-    if (item.id === windowKey) button.className = "active";
-    button.addEventListener("click", function () {
-      windowKey = item.id;
-      teamSyncUrl();
-      renderTeam();
-    });
-    teamEls.windows.append(button);
-  }
+  teamWindowRow();
   const available = listPatches(windowGames());
   patches = patches.filter(function (name) {
     return available.indexOf(name) !== -1;
@@ -225,6 +303,7 @@ function teamDirectory() {
       games: n,
       wins: rec.wins,
       winRate: n ? rec.wins / n : 0,
+      gd15: rec.gdN ? rec.gd / rec.gdN : null,
       kda: kdaRatio(rec.k, rec.d, rec.a),
       fb: firstRate(rec.fb, rec.fbN),
       ft: firstRate(rec.ft, rec.ftN),
@@ -296,7 +375,7 @@ function openPlayer(name) {
     "&league=" +
     encodeURIComponent(formatSel(leagues)) +
     "&window=" +
-    encodeURIComponent(windowKey) +
+    encodeURIComponent(windowParam()) +
     "&patch=" +
     encodeURIComponent(formatSel(patches));
 }
@@ -319,6 +398,7 @@ function renderTeamDirectory() {
       { key: "champ", label: "Pool" },
       { key: "games", label: "Games", num: true },
       { key: "winRate", label: "WR", num: true },
+      { key: "gd15", label: "GD@15", num: true },
       { key: "fb", label: "First blood", num: true },
       { key: "ft", label: "First tower", num: true },
       { key: "fd", label: "First dragon", num: true },
@@ -336,7 +416,7 @@ function renderTeamDirectory() {
     }
   );
   if (!rows.length) {
-    emptyRow(teamEls.body, 10, "No teams match that filter.");
+    emptyRow(teamEls.body, 11, "No teams match that filter.");
     return;
   }
   teamEls.body.innerHTML = "";
@@ -365,6 +445,9 @@ function renderTeamDirectory() {
     const wr = document.createElement("td");
     wr.className = "num " + (row.winRate >= 0.5 ? "wr-up" : "wr-down");
     wr.textContent = fmtPct(row.winRate);
+    const gd = document.createElement("td");
+    gd.className = "num " + (row.gd15 > 0 ? "wr-up" : row.gd15 < 0 ? "wr-down" : "");
+    gd.textContent = row.gd15 == null ? "—" : fmtDiff(row.gd15);
     const fb = document.createElement("td");
     fb.className = "num " + (row.fb >= 0.5 ? "wr-up" : row.fb != null ? "wr-down" : "");
     fb.textContent = fmtPct(row.fb);
@@ -377,7 +460,7 @@ function renderTeamDirectory() {
     const kda = document.createElement("td");
     kda.className = "num";
     kda.textContent = fmtRate(row.kda);
-    tr.append(name, score, leagueCell, pool, games, wr, fb, ft, fd, kda);
+    tr.append(name, score, leagueCell, pool, games, wr, gd, fb, ft, fd, kda);
     teamEls.body.append(tr);
   }
 }
@@ -493,7 +576,7 @@ function renderTeamDetail() {
             "&league=" +
             encodeURIComponent(formatSel(leagues)) +
             "&window=" +
-            encodeURIComponent(windowKey) +
+            encodeURIComponent(windowParam()) +
             "&patch=" +
             encodeURIComponent(formatSel(patches))
         );

@@ -585,6 +585,45 @@ select:hover,
   border-color: var(--accent);
 }
 
+.window-days {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 4px 10px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: text;
+}
+
+.window-days.active {
+  color: #101114;
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.window-days input {
+  width: 3.2em;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-weight: 700;
+  text-align: center;
+  outline: none;
+  -moz-appearance: textfield;
+}
+
+.window-days input::-webkit-outer-spin-button,
+.window-days input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
 .recs {
   display: grid;
   gap: 8px;
