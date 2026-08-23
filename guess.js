@@ -6,6 +6,7 @@ const MODES = [
   { id: "pick", label: "Guess the pick" },
   { id: "winner", label: "Guess the winner" },
 ];
+const PICK_TRIES = 3;
 
 const els = {
   boot: document.getElementById("boot"),
@@ -49,6 +50,7 @@ let role = "All";
 let mode = "pick";
 let puzzle = null;
 let guessed = {};
+let misses = 0;
 let solved = false;
 let showTime = false;
 let stats = { pick: { correct: 0, rounds: 0 }, winner: { correct: 0, rounds: 0 } };
@@ -99,6 +101,25 @@ function champScore(id, roleName) {
   const rec = statsMap[id] && statsMap[id][roleName.toLowerCase()];
   if (!rec || !rec.picks) return null;
   return (rec.wins / rec.picks - 0.5) * 100;
+}
+
+function usedChampIds() {
+  const used = {};
+  if (!puzzle || !puzzle.game) return used;
+  const lists = [puzzle.game.b, puzzle.game.r, puzzle.game.bb, puzzle.game.rb, puzzle.fearless];
+  for (let i = 0; i < lists.length; i += 1) {
+    const ids = lists[i] || [];
+    for (let j = 0; j < ids.length; j += 1) {
+      if (ids[j]) used[ids[j]] = true;
+    }
+  }
+  if (puzzle.id) delete used[puzzle.id];
+  return used;
+}
+
+function champLocked(id) {
+  if (!id || guessed[id]) return true;
+  return !!usedChampIds()[id];
 }
 
 function winrateEntry(id, roleKey) {
@@ -361,7 +382,7 @@ function renderDraft() {
   } else {
     els.hint.textContent = solved
       ? champName(puzzle.id) + " · " + puzzle.role
-      : "One " + puzzle.role + " pick is hidden. Click a champion to guess.";
+      : "One " + puzzle.role + " pick is hidden. Three guesses.";
   }
 }
 
@@ -408,6 +429,7 @@ function nextPuzzle(countRound) {
   if (countRound) stats[mode].rounds += 1;
   puzzle = mode === "winner" ? pickWinnerPuzzle() : pickHiddenPuzzle();
   guessed = {};
+  misses = 0;
   solved = false;
   search = "";
   if (els.search) els.search.value = "";
@@ -442,6 +464,7 @@ function resolveRound(ok, message, tone) {
 
 function guessChamp(id) {
   if (mode !== "pick" || !puzzle || solved || !id) return;
+  if (champLocked(id) && id !== puzzle.id) return;
   if (guessed[id]) return;
   guessed[id] = true;
   if (id === puzzle.id) {
@@ -449,7 +472,14 @@ function guessChamp(id) {
     resolveRound(true, "Correct — " + champName(id), "up");
     return;
   }
-  setFeedback("Not " + champName(id), "down");
+  misses += 1;
+  if (misses >= PICK_TRIES) {
+    els.title.textContent = champName(puzzle.id);
+    resolveRound(false, "Out of guesses — " + champName(puzzle.id), "down");
+    return;
+  }
+  const left = PICK_TRIES - misses;
+  setFeedback("Not " + champName(id) + " · " + left + (left === 1 ? " try" : " tries") + " left", "down");
   renderGrid();
 }
 
@@ -500,13 +530,18 @@ function renderGrid() {
     els.grid.append(empty);
     return;
   }
+  const used = usedChampIds();
   for (let i = 0; i < visible.length; i += 1) {
     const champ = visible[i];
     const wrap = document.createElement("div");
     wrap.className = "champ";
-    if (guessed[champ.id]) wrap.classList.add("disabled");
+    const locked = guessed[champ.id] || !!used[champ.id];
+    if (locked) {
+      wrap.classList.add("disabled");
+      wrap.draggable = false;
+    }
     if (solved && puzzle && champ.id === puzzle.id) wrap.classList.add("suggested");
-    wrap.title = champ.name;
+    wrap.title = locked ? champ.name + " is already drafted or banned" : champ.name;
     const img = document.createElement("img");
     img.src = portrait(champ.id);
     img.alt = champ.name;
