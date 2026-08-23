@@ -261,6 +261,17 @@ function rosterRows(rec) {
       rel: ratingRel(player.name, role),
     });
   }
+  let teamAvg = 0;
+  let teamN = 0;
+  for (let i = 0; i < out.length; i += 1) {
+    if (out[i].score == null || !isFinite(out[i].score)) continue;
+    teamAvg += out[i].score;
+    teamN += 1;
+  }
+  teamAvg = teamN ? teamAvg / teamN : null;
+  for (let i = 0; i < out.length; i += 1) {
+    out[i].vs = vsTeamScore(out[i].score, teamAvg);
+  }
   if (rosterSort === "role") {
     out.sort(function (a, b) {
       const diff = (a.roleOrd - b.roleOrd) * rosterDir;
@@ -423,6 +434,7 @@ function renderTeamDetail() {
       { key: "role", label: "Role" },
       { key: "score", label: "Score", num: true },
       { key: "rel", label: "Rel", num: true },
+      { key: "vs", label: "Vs", num: true },
       { key: "games", label: "Games", num: true },
       { key: "winRate", label: "WR", num: true },
       { key: "kda", label: "KDA", num: true },
@@ -441,7 +453,7 @@ function renderTeamDetail() {
   );
   teamEls.body.innerHTML = "";
   if (!roster.length) {
-    emptyRow(teamEls.body, 8, "No players in this window.");
+    emptyRow(teamEls.body, 9, "No players in this window.");
   } else {
     for (let i = 0; i < roster.length; i += 1) {
       const row = roster[i];
@@ -462,6 +474,10 @@ function renderTeamDetail() {
       relCell.className = "num " + scoreTone(row.rel);
       relCell.textContent = fmtScore(row.rel);
       relCell.title = "Games-weighted average of champion-relative scores";
+      const vsCell = document.createElement("td");
+      vsCell.className = "num " + scoreTone(row.vs);
+      vsCell.textContent = fmtScore(row.vs);
+      vsCell.title = "Score vs team average — above teammates inflates, below deflates";
       const games = document.createElement("td");
       games.className = "num";
       games.textContent = String(row.games);
@@ -473,7 +489,7 @@ function renderTeamDetail() {
       kda.textContent = fmtRate(row.kda);
       const pool = document.createElement("td");
       pool.append(simpleStrip(row.champs));
-      tr.append(name, roleCell, scoreCell, relCell, games, wrCell, kda, pool);
+      tr.append(name, roleCell, scoreCell, relCell, vsCell, games, wrCell, kda, pool);
       teamEls.body.append(tr);
     }
   }

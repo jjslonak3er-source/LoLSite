@@ -335,6 +335,62 @@ function ratingRel(name, roleKey) {
   return ratingField(name, roleKey, "cs");
 }
 
+function vsTeamScore(score, teamAvg) {
+  if (score == null || !isFinite(score) || teamAvg == null || !isFinite(teamAvg)) return null;
+  return Math.round((score + (score - teamAvg)) * 100) / 100;
+}
+
+let teamAvgMemo = { key: "", map: {} };
+
+function teamAvgMap() {
+  const key = [windowKey, formatSel(leagues), formatSel(patches), cutoffDate() || "", (bundle && bundle.to) || ""].join("|");
+  if (teamAvgMemo.key === key) return teamAvgMemo.map;
+  const games = filteredGames();
+  const players = {};
+  for (let i = 0; i < games.length; i += 1) {
+    const game = games[i];
+    const sides = [
+      { names: game.bp, team: game.bt },
+      { names: game.rp, team: game.rt },
+    ];
+    for (let s = 0; s < 2; s += 1) {
+      const side = sides[s];
+      for (let r = 0; r < 5; r += 1) {
+        const name = side.names && side.names[r];
+        const keyName = playerKey(name);
+        if (!keyName) continue;
+        const rec = players[keyName] || (players[keyName] = { name: name, teams: {}, roles: {} });
+        rec.name = name;
+        rec.teams[side.team] = (rec.teams[side.team] || 0) + 1;
+        rec.roles[ROLE_KEYS[r]] = (rec.roles[ROLE_KEYS[r]] || 0) + 1;
+      }
+    }
+  }
+  const bags = {};
+  const keys = Object.keys(players);
+  for (let i = 0; i < keys.length; i += 1) {
+    const rec = players[keys[i]];
+    const team = mostCommon(rec.teams);
+    const score = ratingScore(rec.name, mostCommon(rec.roles));
+    if (!team || score == null || !isFinite(score)) continue;
+    const bag = bags[team] || (bags[team] = { n: 0, s: 0 });
+    bag.n += 1;
+    bag.s += score;
+  }
+  const map = {};
+  const teams = Object.keys(bags);
+  for (let i = 0; i < teams.length; i += 1) {
+    const bag = bags[teams[i]];
+    if (bag.n) map[teams[i]] = bag.s / bag.n;
+  }
+  teamAvgMemo = { key: key, map: map };
+  return map;
+}
+
+function ratingVsTeam(name, roleKey, teamName) {
+  return vsTeamScore(ratingScore(name, roleKey), teamAvgMap()[teamName]);
+}
+
 function liveFiltersOn() {
   return windowKey === "recent" || leagues.length || patches.length;
 }
@@ -1687,6 +1743,7 @@ function directoryRows() {
       kda: kdaRatio(rec.k, rec.d, rec.a),
       score: ratingScore(rec.name, scoreRole),
       rel: ratingRel(rec.name, scoreRole),
+      vs: ratingVsTeam(rec.name, scoreRole, mostCommon(rec.teams)),
     });
   }
   return sortRows(out, dirSort, dirDir);
@@ -1803,6 +1860,7 @@ function renderDirectory() {
       { key: "name", label: "Player" },
       { key: "score", label: "Score", num: true },
       { key: "rel", label: "Rel", num: true },
+      { key: "vs", label: "Vs", num: true },
       { key: "team", label: "Team" },
       { key: "champ", label: "Champs" },
       { key: "games", label: "Games", num: true },
@@ -1821,7 +1879,7 @@ function renderDirectory() {
     }
   );
   if (!rows.length) {
-    emptyRow(els.poolBody, 8, "No players match that filter.");
+    emptyRow(els.poolBody, 9, "No players match that filter.");
     return;
   }
   els.poolBody.innerHTML = "";
@@ -1853,6 +1911,10 @@ function renderDirectory() {
     rel.className = "num " + scoreTone(row.rel);
     rel.textContent = fmtScore(row.rel);
     rel.title = "Games-weighted average of champion-relative scores";
+    const vs = document.createElement("td");
+    vs.className = "num " + scoreTone(row.vs);
+    vs.textContent = fmtScore(row.vs);
+    vs.title = "Score vs team average — above teammates inflates, below deflates";
     const team = document.createElement("td");
     team.textContent = row.team || "—";
     const main = document.createElement("td");
@@ -1866,7 +1928,7 @@ function renderDirectory() {
     const kda = document.createElement("td");
     kda.className = "num";
     kda.textContent = fmtRate(row.kda);
-    tr.append(name, score, rel, team, main, games, wr, kda);
+    tr.append(name, score, rel, vs, team, main, games, wr, kda);
     els.poolBody.append(tr);
   }
 }
@@ -1961,8 +2023,10 @@ function renderSummary(stats) {
   els.summary.append(tile("Role", (stats.role || "").toUpperCase() || "—"));
   const rating = ratingScore(stats.name, role === "All" ? stats.role : role.toLowerCase());
   const rel = ratingRel(stats.name, role === "All" ? stats.role : role.toLowerCase());
+  const vs = ratingVsTeam(stats.name, role === "All" ? stats.role : role.toLowerCase(), stats.team);
   els.summary.append(tile("Score", fmtScore(rating), scoreTone(rating)));
   els.summary.append(tile("Rel", fmtScore(rel), scoreTone(rel)));
+  els.summary.append(tile("Vs", fmtScore(vs), scoreTone(vs)));
   els.summary.append(tile("Games", stats.games.toLocaleString()));
   els.summary.append(tile("WR", fmtPct(stats.winRate), stats.winRate >= 0.5 ? "up" : "down"));
   els.summary.append(tile("KDA", fmtRate(stats.kda)));
