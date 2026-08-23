@@ -532,7 +532,8 @@ select:hover,
   gap: 8px;
 }
 
-#search {
+#search,
+#guess-search {
   width: 100%;
   padding: 10px 12px;
   border: 1px solid var(--line);
@@ -542,7 +543,8 @@ select:hover,
   outline: none;
 }
 
-#search:focus {
+#search:focus,
+#guess-search:focus {
   border-color: var(--accent);
   box-shadow: 0 0 0 3px rgba(197, 208, 216, 0.08);
 }
@@ -2351,18 +2353,29 @@ body.guess-page {
   color: var(--red);
 }
 
+.guess-mid {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
 .guess-pool {
+  flex: 1 1 auto;
+  min-height: 0;
   display: grid;
-  grid-template-rows: auto auto;
+  grid-template-rows: auto minmax(0, 1fr);
   gap: 8px;
+  margin-top: 4px;
   padding: 10px;
   background: var(--panel);
   border: 1px solid var(--line);
   border-radius: var(--radius);
+  text-align: left;
 }
 
 .guess-pool .grid {
-  overflow: visible;
+  overflow: auto;
+  justify-content: center;
 }
 
 .guess-scores {

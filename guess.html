@@ -12,7 +12,7 @@
       href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&family=Sora:wght@600;700&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="styles.css?v=33" />
+    <link rel="stylesheet" href="styles.css?v=34" />
   </head>
   <body class="guess-page">
     <div class="vignette"></div>
@@ -78,6 +78,19 @@
               Show game time
             </label>
             <button id="guess-skip" type="button" class="guess-next">Skip</button>
+            <section id="guess-pool" class="guess-pool" aria-label="Champion guesses">
+              <div class="pool-tools">
+                <input
+                  id="guess-search"
+                  type="search"
+                  placeholder="Search champions"
+                  autocomplete="off"
+                  spellcheck="false"
+                />
+                <div id="guess-roles" class="chips" role="tablist" aria-label="Positions"></div>
+              </div>
+              <div id="guess-grid" class="grid"></div>
+            </section>
           </section>
           <section class="team team-red" aria-label="Red side">
             <header class="team-head">
@@ -87,19 +100,6 @@
             <div id="guess-red-bans" class="bans"></div>
             <div id="guess-red-picks" class="picks"></div>
           </section>
-        </section>
-        <section id="guess-pool" class="guess-pool" aria-label="Champion guesses">
-          <div class="pool-tools">
-            <input
-              id="guess-search"
-              type="search"
-              placeholder="Search champions"
-              autocomplete="off"
-              spellcheck="false"
-            />
-            <div id="guess-roles" class="chips" role="tablist" aria-label="Positions"></div>
-          </div>
-          <div id="guess-grid" class="grid"></div>
         </section>
       </main>
     </div>
