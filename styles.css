@@ -1915,6 +1915,11 @@ select:hover,
   .pro-side {
     min-height: 280px;
   }
+
+  .guess-draft {
+    height: auto;
+    max-height: none;
+  }
 }
 
 .player-layout {
@@ -2317,7 +2322,9 @@ body.guess-page {
 }
 
 .guess-draft {
-  min-height: calc(100vh - 118px);
+  height: calc(100vh - 118px);
+  max-height: calc(100vh - 118px);
+  min-height: 0;
   padding-top: 0;
 }
 
@@ -2356,6 +2363,7 @@ body.guess-page {
 .guess-mid {
   display: flex;
   flex-direction: column;
+  min-height: 0;
   overflow: hidden;
 }
 
