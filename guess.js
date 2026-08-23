@@ -92,11 +92,20 @@ function fmtLength(sec) {
   return m + ":" + String(s).padStart(2, "0");
 }
 
-function playerScore(name, roleName) {
+function playerRec(name, roleName) {
   const key = playerKey(name);
   const roles = (window.RIFT_PLAYER_RATINGS && window.RIFT_PLAYER_RATINGS.roles) || {};
-  const rec = roles[roleName.toLowerCase()] && roles[roleName.toLowerCase()][key];
+  return (roles[roleName.toLowerCase()] && roles[roleName.toLowerCase()][key]) || null;
+}
+
+function playerScore(name, roleName) {
+  const rec = playerRec(name, roleName);
   return rec && rec.s != null ? rec.s : null;
+}
+
+function playerRel(name, roleName) {
+  const rec = playerRec(name, roleName);
+  return rec && rec.cs != null ? rec.cs : null;
 }
 
 function champScore(id, roleName) {
@@ -276,16 +285,22 @@ function banNode(id) {
   return node;
 }
 
-function scoreLine(player, champ) {
+function scoreBit(label, value, title) {
+  const node = document.createElement("span");
+  node.className = value > 0 ? "wr-up" : value < 0 ? "wr-down" : "";
+  node.textContent = label + " " + fmtScore(value);
+  if (title) node.title = title;
+  return node;
+}
+
+function scoreLine(player, rel, champ) {
   const line = document.createElement("div");
   line.className = "guess-scores";
-  const p = document.createElement("span");
-  p.className = player > 0 ? "wr-up" : player < 0 ? "wr-down" : "";
-  p.textContent = "Player " + fmtScore(player);
-  const c = document.createElement("span");
-  c.className = champ > 0 ? "wr-up" : champ < 0 ? "wr-down" : "";
-  c.textContent = "Champ " + fmtScore(champ);
-  line.append(p, c);
+  line.append(
+    scoreBit("Player", player, "Current player score"),
+    scoreBit("Rel", rel, "Games-weighted average of champion-relative scores"),
+    scoreBit("Champ", champ, "Champion role win rate vs 50%")
+  );
   return line;
 }
 
@@ -315,7 +330,7 @@ function pickNode(id, roleName, hidden, revealed, playerName) {
   roleBtn.textContent = roleName;
   meta.append(name);
   if (mode === "winner" && id) {
-    meta.append(scoreLine(playerScore(playerName, roleName), champScore(id, roleName)));
+    meta.append(scoreLine(playerScore(playerName, roleName), playerRel(playerName, roleName), champScore(id, roleName)));
   }
   meta.append(roleBtn);
   node.append(meta);

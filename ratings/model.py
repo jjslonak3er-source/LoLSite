@@ -310,6 +310,25 @@ def rank_champions(
     return out
 
 
+def attach_champ_aggregates(players: list[dict], champions: dict) -> None:
+    """Games-weighted average of each player's champion-relative scores."""
+    bags: dict[str, dict[str, float]] = {}
+    for recs in (champions or {}).values():
+        for row in recs:
+            name = row.get("name") or ""
+            n = float(row.get("games") or 0)
+            if not name or n <= 0:
+                continue
+            rec = bags.setdefault(name, {"w": 0.0, "s": 0.0})
+            rec["w"] += n
+            rec["s"] += n * float(row.get("score") or 0.0)
+    for player in players:
+        rec = bags.get(player["name"])
+        if not rec or rec["w"] <= 0:
+            continue
+        player["champ_score"] = round(rec["s"] / rec["w"], 3)
+
+
 def fit_impact(games: list[dict], min_games: int, half_life: float = 0.0) -> dict[str, float]:
     counts: dict[str, int] = defaultdict(int)
     latest = None
@@ -633,10 +652,12 @@ def blend_role(
         }
         for rec in raw
     }
+    champions = rank_champions(rows, fitted, half_life, player_ctx)
+    attach_champ_aggregates(players, champions)
     return {
         "weights": {key: round(val, 4) for key, val in fitted["weights"].items()},
         "players": players,
-        "champions": rank_champions(rows, fitted, half_life, player_ctx),
+        "champions": champions,
     }
 
 

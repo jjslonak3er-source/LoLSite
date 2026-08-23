@@ -258,6 +258,7 @@ function rosterRows(rec) {
       recent: share ? share.n : 0,
       share: recent.n ? (share ? share.n / recent.n : 0) : 0,
       score: ratingScore(player.name, role),
+      rel: ratingRel(player.name, role),
     });
   }
   if (rosterSort === "role") {
@@ -421,6 +422,7 @@ function renderTeamDetail() {
       { key: "name", label: "Player" },
       { key: "role", label: "Role" },
       { key: "score", label: "Score", num: true },
+      { key: "rel", label: "Rel", num: true },
       { key: "games", label: "Games", num: true },
       { key: "winRate", label: "WR", num: true },
       { key: "kda", label: "KDA", num: true },
@@ -439,7 +441,7 @@ function renderTeamDetail() {
   );
   teamEls.body.innerHTML = "";
   if (!roster.length) {
-    emptyRow(teamEls.body, 7, "No players in this window.");
+    emptyRow(teamEls.body, 8, "No players in this window.");
   } else {
     for (let i = 0; i < roster.length; i += 1) {
       const row = roster[i];
@@ -455,6 +457,11 @@ function renderTeamDetail() {
       const scoreCell = document.createElement("td");
       scoreCell.className = "num " + scoreTone(row.score);
       scoreCell.textContent = fmtScore(row.score);
+      scoreCell.title = "Current player score";
+      const relCell = document.createElement("td");
+      relCell.className = "num " + scoreTone(row.rel);
+      relCell.textContent = fmtScore(row.rel);
+      relCell.title = "Games-weighted average of champion-relative scores";
       const games = document.createElement("td");
       games.className = "num";
       games.textContent = String(row.games);
@@ -466,7 +473,7 @@ function renderTeamDetail() {
       kda.textContent = fmtRate(row.kda);
       const pool = document.createElement("td");
       pool.append(simpleStrip(row.champs));
-      tr.append(name, roleCell, scoreCell, games, wrCell, kda, pool);
+      tr.append(name, roleCell, scoreCell, relCell, games, wrCell, kda, pool);
       teamEls.body.append(tr);
     }
   }

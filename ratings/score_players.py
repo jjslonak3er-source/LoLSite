@@ -90,7 +90,8 @@ def print_role(role: str, payload: dict, top: int) -> None:
             f"{row['team']:<{team_w}}  "
             f"{sign}{score:6.2f}  {row['games']:3d}g  "
             f"WR {row['win_rate']*100:5.1f}%  "
-            f"form {row['form']:+5.1f}  region {row.get('region', 0):+4.2f}  "
+            f"form {row['form']:+5.1f}  rel {row.get('champ_score', 0):+5.1f}  "
+            f"region {row.get('region', 0):+4.2f}  "
             f"tier {row.get('tier', 0):+4.2f}"
             + (f"  idle {row['idle']:.2f}" if row.get("idle", 1) < 0.999 else "")
         )
@@ -250,7 +251,7 @@ def write_site_js(payload: dict, path: Path) -> None:
             name = (row.get("name") or "").strip()
             if not name:
                 continue
-            bucket[name.lower()] = {
+            rec = {
                 "n": name,
                 "s": round(float(row.get("score") or 0.0), 2),
                 "l": row.get("league") or "",
@@ -258,6 +259,9 @@ def write_site_js(payload: dict, path: Path) -> None:
                 "sf": round(float(row.get("form_raw") or 0.0), 4),
                 "c": round(float(row.get("ctx") or 0.0), 4),
             }
+            if row.get("champ_score") is not None:
+                rec["cs"] = round(float(row["champ_score"]), 2)
+            bucket[name.lower()] = rec
         compact["roles"][role] = bucket
         for title, players in (block.get("champions") or {}).items():
             slug = champ_slug(title)

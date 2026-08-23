@@ -307,37 +307,32 @@ function fmtScore(value) {
   return (value > 0 ? "+" : "−") + Math.abs(value).toFixed(1);
 }
 
-function ratingScore(name, roleKey) {
+function ratingField(name, roleKey, field) {
   const key = playerKey(name);
   if (!key) return null;
-  if (liveFiltersOn()) {
-    const live = liveBoard();
-    const roleName = (roleKey || "").toLowerCase();
-    if (roleName && roleName !== "all") {
-      const rec = live.roles[roleName] && live.roles[roleName][key];
-      return rec && rec.s != null ? rec.s : null;
-    }
-    let best = null;
-    for (let i = 0; i < ROLE_KEYS.length; i += 1) {
-      const rec = live.roles[ROLE_KEYS[i]] && live.roles[ROLE_KEYS[i]][key];
-      if (!rec || rec.s == null) continue;
-      if (best == null || rec.s > best) best = rec.s;
-    }
-    return best;
-  }
-  const roles = (window.RIFT_PLAYER_RATINGS && window.RIFT_PLAYER_RATINGS.roles) || {};
+  const roles = liveFiltersOn()
+    ? liveBoard().roles
+    : ((window.RIFT_PLAYER_RATINGS && window.RIFT_PLAYER_RATINGS.roles) || {});
   const roleName = (roleKey || "").toLowerCase();
   if (roleName && roleName !== "all") {
     const rec = roles[roleName] && roles[roleName][key];
-    return rec && rec.s != null ? rec.s : null;
+    return rec && rec[field] != null ? rec[field] : null;
   }
   let best = null;
   for (let i = 0; i < ROLE_KEYS.length; i += 1) {
     const rec = roles[ROLE_KEYS[i]] && roles[ROLE_KEYS[i]][key];
-    if (!rec || rec.s == null) continue;
-    if (best == null || rec.s > best) best = rec.s;
+    if (!rec || rec[field] == null) continue;
+    if (best == null || rec[field] > best) best = rec[field];
   }
   return best;
+}
+
+function ratingScore(name, roleKey) {
+  return ratingField(name, roleKey, "s");
+}
+
+function ratingRel(name, roleKey) {
+  return ratingField(name, roleKey, "cs");
 }
 
 function liveFiltersOn() {
@@ -569,12 +564,45 @@ function liveBoard() {
         : regionBlend * (region[rec.league] || 0);
       raw[rec.n] = (formW * formZ[rec.n] + ctx) * 10;
     }
+    const champBags = {};
+    const grouped = {};
+    const champKeysRole = Object.keys(byChamp);
+    for (let i = 0; i < champKeysRole.length; i += 1) {
+      const rec = byChamp[champKeysRole[i]];
+      if (rec.g < CHAMP_MIN_GAMES) continue;
+      (grouped[rec.champ] || (grouped[rec.champ] = [])).push(rec);
+    }
+    const champTitles = Object.keys(grouped);
+    for (let c = 0; c < champTitles.length; c += 1) {
+      const recs = grouped[champTitles[c]];
+      const mixedMap = {};
+      for (let i = 0; i < recs.length; i += 1) {
+        const rec = recs[i];
+        const playerForm = forms[rec.n] || 0;
+        const hot = rec.w ? rec.pred / rec.w : 0;
+        mixedMap[rec.n] = (rec.g * hot + 10 * playerForm) / (rec.g + 10);
+      }
+      const mixedZ = zAgainst(mixedMap, null);
+      for (let i = 0; i < recs.length; i += 1) {
+        const rec = recs[i];
+        const frozenRec = frozen[roleKey] && frozen[roleKey][playerKey(rec.n)];
+        const ctx = frozenRec && frozenRec.c != null
+          ? frozenRec.c
+          : regionBlend * (region[rec.league] || 0);
+        const rawChamp = (formW * mixedZ[rec.n] + ctx) * 10;
+        const bag = champBags[rec.n] || (champBags[rec.n] = { w: 0, s: 0 });
+        bag.w += rec.g;
+        bag.s += rec.g * rawChamp;
+      }
+    }
     const bucket = {};
     for (let i = 0; i < names.length; i += 1) {
       const rec = byName[names[i]];
+      const bag = champBags[rec.n];
       bucket[playerKey(rec.n)] = {
         n: rec.n,
         s: Math.round(raw[rec.n] * 100) / 100,
+        cs: bag && bag.w ? Math.round((bag.s / bag.w) * 100) / 100 : null,
         t: rec.team,
         l: rec.league,
         g: rec.g,
@@ -1658,6 +1686,7 @@ function directoryRows() {
       winRate: rec.games ? rec.wins / rec.games : 0,
       kda: kdaRatio(rec.k, rec.d, rec.a),
       score: ratingScore(rec.name, scoreRole),
+      rel: ratingRel(rec.name, scoreRole),
     });
   }
   return sortRows(out, dirSort, dirDir);
@@ -1773,6 +1802,7 @@ function renderDirectory() {
     [
       { key: "name", label: "Player" },
       { key: "score", label: "Score", num: true },
+      { key: "rel", label: "Rel", num: true },
       { key: "team", label: "Team" },
       { key: "champ", label: "Champs" },
       { key: "games", label: "Games", num: true },
@@ -1791,7 +1821,7 @@ function renderDirectory() {
     }
   );
   if (!rows.length) {
-    emptyRow(els.poolBody, 7, "No players match that filter.");
+    emptyRow(els.poolBody, 8, "No players match that filter.");
     return;
   }
   els.poolBody.innerHTML = "";
@@ -1818,6 +1848,11 @@ function renderDirectory() {
     const score = document.createElement("td");
     score.className = "num " + scoreTone(row.score);
     score.textContent = fmtScore(row.score);
+    score.title = "Current player score";
+    const rel = document.createElement("td");
+    rel.className = "num " + scoreTone(row.rel);
+    rel.textContent = fmtScore(row.rel);
+    rel.title = "Games-weighted average of champion-relative scores";
     const team = document.createElement("td");
     team.textContent = row.team || "—";
     const main = document.createElement("td");
@@ -1831,7 +1866,7 @@ function renderDirectory() {
     const kda = document.createElement("td");
     kda.className = "num";
     kda.textContent = fmtRate(row.kda);
-    tr.append(name, score, team, main, games, wr, kda);
+    tr.append(name, score, rel, team, main, games, wr, kda);
     els.poolBody.append(tr);
   }
 }
@@ -1925,7 +1960,9 @@ function renderSummary(stats) {
   els.summary.append(tile("Team", stats.team || "—"));
   els.summary.append(tile("Role", (stats.role || "").toUpperCase() || "—"));
   const rating = ratingScore(stats.name, role === "All" ? stats.role : role.toLowerCase());
+  const rel = ratingRel(stats.name, role === "All" ? stats.role : role.toLowerCase());
   els.summary.append(tile("Score", fmtScore(rating), scoreTone(rating)));
+  els.summary.append(tile("Rel", fmtScore(rel), scoreTone(rel)));
   els.summary.append(tile("Games", stats.games.toLocaleString()));
   els.summary.append(tile("WR", fmtPct(stats.winRate), stats.winRate >= 0.5 ? "up" : "down"));
   els.summary.append(tile("KDA", fmtRate(stats.kda)));
