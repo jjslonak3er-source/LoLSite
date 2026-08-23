@@ -17,7 +17,8 @@ The rater does four things, then blends them:
    2nd/3rd seeds), then flattened so LCK stays ahead without dominating.
 4. Tier — LCK Rounds 3-4 and LPL group stages split into a high group
    (Legend / Ascend) and a low group (Rise / Nirvana). High-group games
-   count more; low-group games are downweighted and carry a penalty.
+   count more; low-group games are downweighted hard and carry a steep
+   penalty so Rise/Nirvana box scores do not look like Legend/Ascend.
 
 Players stay on the board after they stop playing. After 30 idle days
 (including internationals and partials), extra names are mapped onto the

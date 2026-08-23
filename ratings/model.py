@@ -22,8 +22,10 @@ SHRINK_GAMES = 24.0
 FORM_PRIOR = 28.0
 TEAM_IMPACT_SHARE = 0.5
 # LCK Legend / LPL Ascend vs LCK Rise / LPL Nirvana.
-TIER_GAME_WEIGHT = {"high": 1.25, "low": 0.35, "open": 1.0}
-TIER_SCORE = {"high": 0.18, "low": -0.42, "open": 0.0}
+# Low-group games count less toward form, and the tier term itself
+# is a hard haircut (~−4 on a fully Rise/Nirvana slate).
+TIER_GAME_WEIGHT = {"high": 1.25, "low": 0.18, "open": 1.0}
+TIER_SCORE = {"high": 0.18, "low": -2.60, "open": 0.0}
 # After this many idle days, score starts fading. Half-life is extra idle time.
 # The live ladder (z-scores and the ~0 center) still uses recently-active
 # players only, so adding idle names does not reshuffle Tarzan/Viper.
@@ -535,6 +537,23 @@ def grouped_z(values: dict[str, float], groups: dict[str, str]) -> dict[str, flo
     return out
 
 
+def low_division_teams(games: list[dict]) -> set[str]:
+    """Teams whose most recent LCK/LPL group stage was Rise / Nirvana."""
+    last: dict[str, tuple[str, str]] = {}
+    for game in games or []:
+        tier = game.get("tier") or "open"
+        if tier not in ("high", "low"):
+            continue
+        date = game.get("date") or ""
+        for team in (game.get("blue_team"), game.get("red_team")):
+            if not team:
+                continue
+            prev = last.get(team)
+            if not prev or date >= prev[0]:
+                last[team] = (date, tier)
+    return {team for team, rec in last.items() if rec[1] == "low"}
+
+
 def z_against(values: dict[str, float], anchor: set[str]) -> dict[str, float]:
     ref = [values[name] for name in anchor if name in values]
     if len(ref) < 2:
@@ -551,6 +570,7 @@ def blend_role(
     half_life: float = 0.0,
     last_dates: dict[str, str] | None = None,
     latest: datetime | None = None,
+    low_teams: set[str] | None = None,
 ) -> dict:
     if len(rows) < 40:
         return {"weights": {}, "players": [], "champions": {}}
@@ -599,6 +619,8 @@ def blend_role(
         rec["impact"] = impact.get(name, 0.0)
         rec["region"] = region.get(rec["league"], 0.0)
         rec["tier_term"] = rec.get("tier", 0.0)
+        if low_teams and rec["team"] in low_teams:
+            rec["tier_term"] = min(rec["tier_term"], TIER_SCORE["low"])
         rec["raw"] = (
             QUALITY_BLEND * form_z[name]
             + IMPACT_BLEND * impact_z[name]
@@ -687,6 +709,7 @@ def rate_players(
             dt = _parse_date(value)
             if dt and (latest is None or dt > latest):
                 latest = dt
+    low_teams = low_division_teams(games)
     roles = {}
     for role in ROLES:
         roles[role] = blend_role(
@@ -697,6 +720,7 @@ def rate_players(
             half_life=half_life,
             last_dates=last_dates,
             latest=latest,
+            low_teams=low_teams,
         )
     return {
         "min_games": min_games,
