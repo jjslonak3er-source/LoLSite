@@ -105,6 +105,7 @@ def main() -> int:
             ]
         )
 
+    oracles_ok = False
     if not args.skip_oracles:
         oracles = ROOT / "sync_oracles.py"
         if not oracles.exists():
@@ -114,7 +115,16 @@ def main() -> int:
                 "Missing sync_oracles.py. Upload it to the repo root "
                 "(next to update.py) and re-run the workflow."
             )
-        run([PY, str(oracles), "--cache", str(ROOT / "oracles.csv")])
+        try:
+            run([PY, str(oracles), "--cache", str(ROOT / "oracles.csv")])
+            oracles_ok = True
+        except subprocess.CalledProcessError:
+            print(
+                "\nWARNING: Oracle's Elixir download failed "
+                "(Drive quota or interstitial). Keeping the last committed "
+                "oracles.js / pro-games.js and skipping player ratings.",
+                flush=True,
+            )
 
     if not args.skip_ratings:
         score = ROOT / "ratings" / "score_players.py"
@@ -124,8 +134,18 @@ def main() -> int:
                 "files (not just player_ratings.json) and re-run."
             )
         csv_path = ROOT / "oracles.csv"
-        extra = ["--csv", str(csv_path)] if csv_path.exists() else []
-        run([PY, "-m", "ratings.score_players", *extra])
+        have_csv = False
+        if csv_path.exists() and csv_path.stat().st_size > 100:
+            with csv_path.open(encoding="utf-8", errors="replace") as handle:
+                have_csv = handle.read(64).lstrip("\ufeff").lower().startswith("gameid")
+        if not oracles_ok and not have_csv:
+            print(
+                "\nWARNING: Skipping player ratings; no Oracle's Elixir CSV.",
+                flush=True,
+            )
+        else:
+            extra = ["--csv", str(csv_path)] if csv_path.exists() else []
+            run([PY, "-m", "ratings.score_players", *extra])
 
     print("\nRefresh complete.")
     return 0

@@ -25,6 +25,10 @@ DRIVE_URLS = [
     f"https://drive.usercontent.google.com/download?id={DRIVE_ID}&export=download&confirm=t",
     f"https://drive.google.com/uc?export=download&id={DRIVE_ID}&confirm=t",
 ]
+DRIVE_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/128.0.0.0"
+CONFIRM_RE = re.compile(r'name=["\']confirm["\']\s+value=["\']([^"\']+)', re.I)
+UUID_RE = re.compile(r'name=["\']uuid["\']\s+value=["\']([^"\']+)', re.I)
+HREF_CONFIRM_RE = re.compile(r"[?&]confirm=([0-9A-Za-z_-]+)")
 
 ALIASES = {
     "nunuwillump": "Nunu",
@@ -80,38 +84,88 @@ def looks_like_csv(path: Path) -> bool:
     return start.lower().startswith("gameid")
 
 
+def _curl_get(curl: str, url: str, dest: Path, cookies: Path) -> bool:
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        subprocess.run(
+            [
+                curl,
+                "-sL",
+                "--http1.1",
+                "--max-time",
+                "180",
+                "-A",
+                DRIVE_UA,
+                "-c",
+                str(cookies),
+                "-b",
+                str(cookies),
+                "-o",
+                str(dest),
+                url,
+            ],
+            check=True,
+        )
+        return dest.exists()
+    except (OSError, subprocess.CalledProcessError) as exc:
+        print(f"  download failed: {exc}")
+        return False
+
+
+def _drive_confirm_url(html: str) -> str | None:
+    lowered = html.lower()
+    if "quota" in lowered or "too many users" in lowered:
+        return None
+    confirm = ""
+    match = CONFIRM_RE.search(html) or HREF_CONFIRM_RE.search(html)
+    if match:
+        confirm = match.group(1)
+    uuid_match = UUID_RE.search(html)
+    uuid = uuid_match.group(1) if uuid_match else ""
+    if not confirm and not uuid:
+        return None
+    url = f"https://drive.usercontent.google.com/download?id={DRIVE_ID}&export=download"
+    if confirm:
+        url += f"&confirm={confirm}"
+    if uuid:
+        url += f"&uuid={uuid}"
+    return url
+
+
 def download_drive(dest: Path) -> bool:
     dest.parent.mkdir(parents=True, exist_ok=True)
     curl = shutil.which("curl") or shutil.which("curl.exe")
     if not curl:
         print("curl is not installed.")
         return False
-    for url in DRIVE_URLS:
-        print(f"Trying Drive: {url}")
-        try:
-            subprocess.run(
-                [
-                    curl,
-                    "-sL",
-                    "--http1.1",
-                    "--max-time",
-                    "180",
-                    "-A",
-                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/128.0.0.0",
-                    "-o",
-                    str(dest),
-                    url,
-                ],
-                check=True,
-            )
-        except (OSError, subprocess.CalledProcessError) as exc:
-            print(f"  download failed: {exc}")
-            continue
-        if looks_like_csv(dest):
-            print(f"  saved {dest.stat().st_size:,} bytes")
-            return True
-        print("  Drive did not return a CSV (quota page or HTML interstitial).")
-    return False
+    tmp = dest.with_name(dest.name + ".part")
+    cookies = dest.with_name(dest.name + ".cookies")
+    try:
+        for url in DRIVE_URLS:
+            print(f"Trying Drive: {url}")
+            if not _curl_get(curl, url, tmp, cookies):
+                continue
+            if looks_like_csv(tmp):
+                shutil.move(str(tmp), str(dest))
+                print(f"  saved {dest.stat().st_size:,} bytes")
+                return True
+            html = tmp.read_text(encoding="utf-8", errors="replace")[:20000]
+            confirm_url = _drive_confirm_url(html)
+            if not confirm_url:
+                print("  Drive did not return a CSV (quota page or HTML interstitial).")
+                continue
+            print(f"  confirm page; retrying {confirm_url}")
+            if _curl_get(curl, confirm_url, tmp, cookies) and looks_like_csv(tmp):
+                shutil.move(str(tmp), str(dest))
+                print(f"  saved {dest.stat().st_size:,} bytes")
+                return True
+            print("  Drive did not return a CSV (quota page or HTML interstitial).")
+        return False
+    finally:
+        if tmp.exists():
+            tmp.unlink()
+        if cookies.exists():
+            cookies.unlink()
 
 
 def newest_local_csv() -> Path | None:
