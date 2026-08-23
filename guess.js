@@ -298,7 +298,7 @@ function scoreLine(player, rel, champ) {
   line.className = "guess-scores";
   line.append(
     scoreBit("Player", player, "Current player score"),
-    scoreBit("Rel", rel, "Games-weighted average of champion-relative scores"),
+    scoreBit("Mastery", rel, "Games-weighted average of champion-relative scores"),
     scoreBit("Champ", champ, "Champion role win rate vs 50%")
   );
   return line;

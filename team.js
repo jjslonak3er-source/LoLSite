@@ -227,6 +227,7 @@ function teamDirectory() {
       fd: firstRate(rec.fd, rec.fdN),
       champs: topKeys(rec.champs, 5),
       score: teamScore(rec.name, rec.games),
+      vs: rosterTrueScore(rosterRows(rec)),
       rec: rec,
     });
   }
@@ -285,6 +286,20 @@ function rosterRows(rec) {
   return sortRows(out, rosterSort, rosterDir);
 }
 
+function rosterTrueScore(roster) {
+  let num = 0;
+  let den = 0;
+  for (let i = 0; i < roster.length; i += 1) {
+    if (roster[i].vs == null || !isFinite(roster[i].vs)) continue;
+    const w = roster[i].games || 0;
+    if (w <= 0) continue;
+    num += roster[i].vs * w;
+    den += w;
+  }
+  if (!den) return null;
+  return num / den;
+}
+
 function simpleStrip(ids) {
   const wrap = document.createElement("div");
   wrap.className = "champ-strip";
@@ -324,6 +339,7 @@ function renderTeamDirectory() {
     teamEls.head,
     [
       { key: "name", label: "Team" },
+      { key: "vs", label: "True score", num: true },
       { key: "score", label: "Score", num: true },
       { key: "league", label: "League" },
       { key: "champ", label: "Pool" },
@@ -347,7 +363,7 @@ function renderTeamDirectory() {
     }
   );
   if (!rows.length) {
-    emptyRow(teamEls.body, 11, "No teams match that filter.");
+    emptyRow(teamEls.body, 12, "No teams match that filter.");
     return;
   }
   teamEls.body.innerHTML = "";
@@ -363,6 +379,10 @@ function renderTeamDirectory() {
     });
     const name = document.createElement("td");
     name.textContent = row.name;
+    const vs = document.createElement("td");
+    vs.className = "num " + scoreTone(row.vs);
+    vs.textContent = fmtScore(row.vs);
+    vs.title = "Games-weighted roster True score";
     const score = document.createElement("td");
     score.className = "num " + scoreTone(row.score);
     score.textContent = fmtScore(row.score);
@@ -391,7 +411,7 @@ function renderTeamDirectory() {
     const kda = document.createElement("td");
     kda.className = "num";
     kda.textContent = fmtRate(row.kda);
-    tr.append(name, score, leagueCell, pool, games, wr, gd, fb, ft, fd, kda);
+    tr.append(name, vs, score, leagueCell, pool, games, wr, gd, fb, ft, fd, kda);
     teamEls.body.append(tr);
   }
 }
@@ -407,7 +427,9 @@ function renderTeamDetail() {
   }
   teamEls.layout.classList.remove("is-directory");
   const n = rec.games.length;
+  const roster = rosterRows(rec);
   const score = teamScore(rec.name, rec.games);
+  const trueScore = rosterTrueScore(roster);
   const wr = n ? rec.wins / n : 0;
   teamEls.title.textContent = rec.name;
   document.title = rec.name + " — Team stats";
@@ -415,6 +437,7 @@ function renderTeamDetail() {
   teamEls.summary.hidden = false;
   teamEls.summary.innerHTML = "";
   teamEls.summary.append(tile("League", mostCommon(rec.leagues) || "—"));
+  teamEls.summary.append(tile("True score", fmtScore(trueScore), scoreTone(trueScore)));
   teamEls.summary.append(tile("Score", fmtScore(score), scoreTone(score)));
   teamEls.summary.append(tile("Games", n.toLocaleString()));
   teamEls.summary.append(tile("WR", fmtPct(wr), wr >= 0.5 ? "up" : "down"));
@@ -427,16 +450,15 @@ function renderTeamDetail() {
   teamEls.summary.append(tile("First tower", fmtPct(ft), ft >= 0.5 ? "up" : ft != null ? "down" : ""));
   teamEls.summary.append(tile("First dragon", fmtPct(fd), fd >= 0.5 ? "up" : fd != null ? "down" : ""));
 
-  const roster = rosterRows(rec);
   teamEls.boardTitle.textContent = "Roster";
   setHead(
     teamEls.head,
     [
       { key: "name", label: "Player" },
       { key: "role", label: "Role" },
+      { key: "vs", label: "True score", num: true },
       { key: "score", label: "Score", num: true },
-      { key: "rel", label: "Rel", num: true },
-      { key: "vs", label: "Vs", num: true },
+      { key: "rel", label: "Mastery", num: true },
       { key: "games", label: "Games", num: true },
       { key: "winRate", label: "WR", num: true },
       { key: "kda", label: "KDA", num: true },
@@ -479,7 +501,7 @@ function renderTeamDetail() {
       const vsCell = document.createElement("td");
       vsCell.className = "num " + scoreTone(row.vs);
       vsCell.textContent = fmtScore(row.vs);
-      vsCell.title = "Average of Score and Rel vs team average — above teammates inflates, below deflates";
+      vsCell.title = "Average of Score and Mastery vs team average — above teammates inflates, below deflates";
       const games = document.createElement("td");
       games.className = "num";
       games.textContent = String(row.games);
@@ -491,7 +513,7 @@ function renderTeamDetail() {
       kda.textContent = fmtRate(row.kda);
       const pool = document.createElement("td");
       pool.append(simpleStrip(row.champs));
-      tr.append(name, roleCell, scoreCell, relCell, vsCell, games, wrCell, kda, pool);
+      tr.append(name, roleCell, vsCell, scoreCell, relCell, games, wrCell, kda, pool);
       teamEls.body.append(tr);
     }
   }
