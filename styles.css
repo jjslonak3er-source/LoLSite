@@ -2439,12 +2439,18 @@ body.guess-page {
   color: var(--gold-bright);
 }
 
+.guess-options {
+  display: grid;
+  gap: 8px;
+  margin-top: 14px;
+}
+
 .guess-time-toggle {
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 8px;
-  margin-top: 14px;
+  margin: 0;
   color: var(--muted);
   font-size: 12px;
   font-weight: 600;

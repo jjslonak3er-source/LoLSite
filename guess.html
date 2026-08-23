@@ -12,7 +12,7 @@
       href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&family=Sora:wght@600;700&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="styles.css?v=35" />
+    <link rel="stylesheet" href="styles.css?v=36" />
   </head>
   <body class="guess-page">
     <div class="vignette"></div>
@@ -73,10 +73,16 @@
               <button type="button" id="guess-blue" class="guess-side-btn blue">Blue wins</button>
               <button type="button" id="guess-red" class="guess-side-btn red">Red wins</button>
             </div>
-            <label id="guess-time-toggle" class="guess-time-toggle" hidden>
-              <input id="guess-show-time" type="checkbox" />
-              Show game time
-            </label>
+            <div class="guess-options">
+              <label id="guess-names-toggle" class="guess-time-toggle">
+                <input id="guess-show-names" type="checkbox" />
+                Show team names
+              </label>
+              <label id="guess-time-toggle" class="guess-time-toggle" hidden>
+                <input id="guess-show-time" type="checkbox" />
+                Show game time
+              </label>
+            </div>
             <button id="guess-skip" type="button" class="guess-next">Skip</button>
             <section id="guess-pool" class="guess-pool" aria-label="Champion guesses">
               <div class="pool-tools">
@@ -109,6 +115,6 @@
     <script src="oracles.js"></script>
     <script src="player-ratings.js"></script>
     <script src="pro-games.js"></script>
-    <script src="guess.js?v=5"></script>
+    <script src="guess.js?v=6"></script>
   </body>
 </html>

@@ -31,6 +31,8 @@ const els = {
   winnerActions: document.getElementById("guess-winner-actions"),
   blueBtn: document.getElementById("guess-blue"),
   redBtn: document.getElementById("guess-red"),
+  namesToggle: document.getElementById("guess-names-toggle"),
+  showNames: document.getElementById("guess-show-names"),
   timeToggle: document.getElementById("guess-time-toggle"),
   showTime: document.getElementById("guess-show-time"),
   pool: document.getElementById("guess-pool"),
@@ -53,6 +55,7 @@ let guessed = {};
 let misses = 0;
 let solved = false;
 let showTime = false;
+let showNames = false;
 let stats = { pick: { correct: 0, rounds: 0 }, winner: { correct: 0, rounds: 0 } };
 let seen = { pick: {}, winner: {} };
 
@@ -350,18 +353,27 @@ function renderFearless() {
   }
 }
 
-function sideLabel(side, revealNames) {
+function matchupText() {
   const game = puzzle && puzzle.game;
-  if (revealNames && game) return side === "b" ? game.bt || "Blue" : game.rt || "Red";
+  if (!game) return "";
+  return (game.bt || "Blue") + " vs " + (game.rt || "Red");
+}
+
+function namesVisible() {
+  return solved || showNames;
+}
+
+function sideLabel(side) {
+  const game = puzzle && puzzle.game;
+  if (namesVisible() && game) return side === "b" ? game.bt || "Blue" : game.rt || "Red";
   return side === "b" ? "Blue" : "Red";
 }
 
 function renderDraft() {
   const game = puzzle.game;
   const info = seriesMeta[game.g] || {};
-  const revealNames = mode === "winner" && solved;
-  els.blueName.textContent = sideLabel("b", revealNames);
-  els.redName.textContent = sideLabel("r", revealNames);
+  els.blueName.textContent = sideLabel("b");
+  els.redName.textContent = sideLabel("r");
   renderBans(els.blueBans, game.bb);
   renderBans(els.redBans, game.rb);
   renderPicks(els.bluePicks, game.b, game.bp, "b");
@@ -381,7 +393,7 @@ function renderDraft() {
       : "Guess which side won. Team names are hidden.";
   } else {
     els.hint.textContent = solved
-      ? champName(puzzle.id) + " · " + puzzle.role
+      ? [champName(puzzle.id), puzzle.role, matchupText()].filter(Boolean).join(" · ")
       : "One " + puzzle.role + " pick is hidden. Three guesses.";
   }
 }
@@ -469,13 +481,13 @@ function guessChamp(id) {
   guessed[id] = true;
   if (id === puzzle.id) {
     els.title.textContent = champName(id);
-    resolveRound(true, "Correct — " + champName(id), "up");
+    resolveRound(true, "Correct — " + champName(id) + " · " + matchupText(), "up");
     return;
   }
   misses += 1;
   if (misses >= PICK_TRIES) {
     els.title.textContent = champName(puzzle.id);
-    resolveRound(false, "Out of guesses — " + champName(puzzle.id), "down");
+    resolveRound(false, "Out of guesses — " + champName(puzzle.id) + " · " + matchupText(), "down");
     return;
   }
   const left = PICK_TRIES - misses;
@@ -593,6 +605,12 @@ function boot() {
     }
     if (els.blueBtn) els.blueBtn.addEventListener("click", function () { guessWinner("b"); });
     if (els.redBtn) els.redBtn.addEventListener("click", function () { guessWinner("r"); });
+    if (els.showNames) {
+      els.showNames.addEventListener("change", function () {
+        showNames = els.showNames.checked;
+        if (puzzle) renderDraft();
+      });
+    }
     if (els.showTime) {
       els.showTime.addEventListener("change", function () {
         showTime = els.showTime.checked;
