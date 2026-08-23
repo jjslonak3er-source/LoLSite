@@ -3,8 +3,8 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Whisper Draft — Guess the pick</title>
-    <meta name="description" content="Guess the hidden champion in a real pro draft. Fearless picks are shown after game 1." />
+    <title>Whisper Draft — Guess</title>
+    <meta name="description" content="Guess the hidden champion or the winning side in a real pro draft." />
     <link rel="preconnect" href="https://ddragon.leagueoflegends.com" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -12,7 +12,7 @@
       href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&family=Sora:wght@600;700&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="styles.css?v=29" />
+    <link rel="stylesheet" href="styles.css?v=30" />
   </head>
   <body class="guess-page">
     <div class="vignette"></div>
@@ -41,7 +41,7 @@
           </div>
         </div>
         <div class="phase-wrap">
-          <p class="phase-kicker">Guess the pick</p>
+          <p class="phase-kicker">Guess</p>
           <h2 id="guess-title" class="phase-title done">Who is missing?</h2>
         </div>
         <div class="top-actions">
@@ -51,6 +51,7 @@
       </header>
 
       <main class="guess-main">
+        <div id="guess-modes" class="chips" role="tablist" aria-label="Game mode"></div>
         <section id="guess-fearless" class="guess-fearless" hidden>
           <p class="phase-kicker">Already picked this series</p>
           <div id="guess-fearless-row" class="guess-fearless-row"></div>
@@ -66,8 +67,17 @@
           </section>
           <section class="match-mid guess-mid">
             <p id="guess-meta" class="result"></p>
+            <p id="guess-time" class="guess-time" hidden></p>
             <p id="guess-hint" class="muted"></p>
             <p id="guess-feedback" class="guess-feedback"></p>
+            <div id="guess-winner-actions" class="guess-winner-actions" hidden>
+              <button type="button" id="guess-blue" class="guess-side-btn blue">Blue wins</button>
+              <button type="button" id="guess-red" class="guess-side-btn red">Red wins</button>
+            </div>
+            <label id="guess-time-toggle" class="guess-time-toggle" hidden>
+              <input id="guess-show-time" type="checkbox" />
+              Show game time
+            </label>
           </section>
           <section class="team team-red" aria-label="Red side">
             <header class="team-head">
@@ -78,7 +88,7 @@
             <div id="guess-red-picks" class="picks"></div>
           </section>
         </section>
-        <section class="guess-pool" aria-label="Champion guesses">
+        <section id="guess-pool" class="guess-pool" aria-label="Champion guesses">
           <div class="pool-tools">
             <input
               id="guess-search"
@@ -96,7 +106,9 @@
 
     <script src="champions.js"></script>
     <script src="winrates.js"></script>
+    <script src="oracles.js"></script>
+    <script src="player-ratings.js"></script>
     <script src="pro-games.js"></script>
-    <script src="guess.js?v=1"></script>
+    <script src="guess.js?v=2"></script>
   </body>
 </html>

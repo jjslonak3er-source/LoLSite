@@ -2,6 +2,10 @@ const DDRAGON = "https://ddragon.leagueoflegends.com";
 const ROLES = ["All", "TOP", "JNG", "MID", "ADC", "SUP"];
 const ROLE_KEYS = ["TOP", "JNG", "MID", "ADC", "SUP"];
 const ROLE_LANES = ["top", "jng", "mid", "adc", "sup"];
+const MODES = [
+  { id: "pick", label: "Guess the pick" },
+  { id: "winner", label: "Guess the winner" },
+];
 
 const els = {
   boot: document.getElementById("boot"),
@@ -10,6 +14,7 @@ const els = {
   title: document.getElementById("guess-title"),
   score: document.getElementById("guess-score"),
   skip: document.getElementById("guess-skip"),
+  modes: document.getElementById("guess-modes"),
   fearless: document.getElementById("guess-fearless"),
   fearlessRow: document.getElementById("guess-fearless-row"),
   blueName: document.getElementById("guess-blue-name"),
@@ -19,8 +24,15 @@ const els = {
   bluePicks: document.getElementById("guess-blue-picks"),
   redPicks: document.getElementById("guess-red-picks"),
   meta: document.getElementById("guess-meta"),
+  time: document.getElementById("guess-time"),
   hint: document.getElementById("guess-hint"),
   feedback: document.getElementById("guess-feedback"),
+  winnerActions: document.getElementById("guess-winner-actions"),
+  blueBtn: document.getElementById("guess-blue"),
+  redBtn: document.getElementById("guess-red"),
+  timeToggle: document.getElementById("guess-time-toggle"),
+  showTime: document.getElementById("guess-show-time"),
+  pool: document.getElementById("guess-pool"),
   search: document.getElementById("guess-search"),
   roles: document.getElementById("guess-roles"),
   grid: document.getElementById("guess-grid"),
@@ -34,12 +46,13 @@ let seriesMeta = {};
 let seriesGames = {};
 let search = "";
 let role = "All";
+let mode = "pick";
 let puzzle = null;
 let guessed = {};
 let solved = false;
-let correct = 0;
-let rounds = 0;
-let seen = {};
+let showTime = false;
+let stats = { pick: { correct: 0, rounds: 0 }, winner: { correct: 0, rounds: 0 } };
+let seen = { pick: {}, winner: {} };
 
 function portrait(id) {
   return DDRAGON + "/cdn/" + patch + "/img/champion/" + id + ".png";
@@ -51,6 +64,41 @@ function loadingArt(id) {
 
 function champName(id) {
   return (champMap.get(id) && champMap.get(id).name) || id || "";
+}
+
+function playerKey(name) {
+  return String(name || "")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, "");
+}
+
+function fmtScore(value) {
+  if (value == null || !isFinite(value)) return "—";
+  if (!value) return "0.0";
+  return (value > 0 ? "+" : "−") + Math.abs(value).toFixed(1);
+}
+
+function fmtLength(sec) {
+  const n = Number(sec) || 0;
+  if (!n) return "—";
+  const m = Math.floor(n / 60);
+  const s = n % 60;
+  return m + ":" + String(s).padStart(2, "0");
+}
+
+function playerScore(name, roleName) {
+  const key = playerKey(name);
+  const roles = (window.RIFT_PLAYER_RATINGS && window.RIFT_PLAYER_RATINGS.roles) || {};
+  const rec = roles[roleName.toLowerCase()] && roles[roleName.toLowerCase()][key];
+  return rec && rec.s != null ? rec.s : null;
+}
+
+function champScore(id, roleName) {
+  const statsMap = (window.RIFT_ORACLES && window.RIFT_ORACLES.stats) || {};
+  const rec = statsMap[id] && statsMap[id][roleName.toLowerCase()];
+  if (!rec || !rec.picks) return null;
+  return (rec.wins / rec.picks - 0.5) * 100;
 }
 
 function winrateEntry(id, roleKey) {
@@ -144,27 +192,25 @@ function priorPicks(game) {
   return out;
 }
 
-function pickPuzzle() {
-  const rows = (bundle.games || []).filter(completeGame);
+function completeRows() {
+  return (bundle.games || []).filter(completeGame);
+}
+
+function pickHiddenPuzzle() {
+  const rows = completeRows();
   if (!rows.length) return null;
+  const bag = seen.pick;
   for (let tries = 0; tries < 40; tries += 1) {
     const game = rows[Math.floor(Math.random() * rows.length)];
     const side = Math.random() < 0.5 ? "b" : "r";
     const index = Math.floor(Math.random() * 5);
     const id = (side === "b" ? game.b : game.r)[index];
     const key = game.g + ":" + side + ":" + index;
-    if (!id || seen[key]) continue;
-    seen[key] = true;
-    return {
-      game: game,
-      side: side,
-      index: index,
-      id: id,
-      role: ROLE_KEYS[index],
-      fearless: priorPicks(game),
-    };
+    if (!id || bag[key]) continue;
+    bag[key] = true;
+    return { game: game, side: side, index: index, id: id, role: ROLE_KEYS[index], fearless: priorPicks(game) };
   }
-  seen = {};
+  seen.pick = {};
   const game = rows[Math.floor(Math.random() * rows.length)];
   const side = Math.random() < 0.5 ? "b" : "r";
   const index = Math.floor(Math.random() * 5);
@@ -176,6 +222,21 @@ function pickPuzzle() {
     role: ROLE_KEYS[index],
     fearless: priorPicks(game),
   };
+}
+
+function pickWinnerPuzzle() {
+  const rows = completeRows();
+  if (!rows.length) return null;
+  const bag = seen.winner;
+  for (let tries = 0; tries < 40; tries += 1) {
+    const game = rows[Math.floor(Math.random() * rows.length)];
+    if (bag[game.g]) continue;
+    bag[game.g] = true;
+    return { game: game, winner: game.w === 1 ? "b" : "r" };
+  }
+  seen.winner = {};
+  const game = rows[Math.floor(Math.random() * rows.length)];
+  return { game: game, winner: game.w === 1 ? "b" : "r" };
 }
 
 function banNode(id) {
@@ -191,7 +252,20 @@ function banNode(id) {
   return node;
 }
 
-function pickNode(id, roleName, hidden, revealed) {
+function scoreLine(player, champ) {
+  const line = document.createElement("div");
+  line.className = "guess-scores";
+  const p = document.createElement("span");
+  p.className = player > 0 ? "wr-up" : player < 0 ? "wr-down" : "";
+  p.textContent = "Player " + fmtScore(player);
+  const c = document.createElement("span");
+  c.className = champ > 0 ? "wr-up" : champ < 0 ? "wr-down" : "";
+  c.textContent = "Champ " + fmtScore(champ);
+  line.append(p, c);
+  return line;
+}
+
+function pickNode(id, roleName, hidden, revealed, playerName) {
   const node = document.createElement("div");
   node.className = "pick";
   if (hidden && !revealed) {
@@ -217,6 +291,9 @@ function pickNode(id, roleName, hidden, revealed) {
   roleBtn.textContent = roleName;
   meta.append(name, roleBtn);
   node.append(meta);
+  if (mode === "winner" && id) {
+    node.append(scoreLine(playerScore(playerName, roleName), champScore(id, roleName)));
+  }
   return node;
 }
 
@@ -225,16 +302,16 @@ function renderBans(root, ids) {
   for (let i = 0; i < 5; i += 1) root.append(banNode(ids && ids[i]));
 }
 
-function renderPicks(root, ids, side) {
+function renderPicks(root, ids, names, side) {
   root.innerHTML = "";
   for (let i = 0; i < 5; i += 1) {
-    const hidden = puzzle && puzzle.side === side && puzzle.index === i;
-    root.append(pickNode(ids[i], ROLE_KEYS[i], hidden, solved));
+    const hidden = mode === "pick" && puzzle && puzzle.side === side && puzzle.index === i;
+    root.append(pickNode(ids[i], ROLE_KEYS[i], hidden, solved, names && names[i]));
   }
 }
 
 function renderFearless() {
-  const ids = (puzzle && puzzle.fearless) || [];
+  const ids = mode === "pick" && puzzle ? puzzle.fearless || [] : [];
   if (!ids.length) {
     els.fearless.hidden = true;
     els.fearlessRow.innerHTML = "";
@@ -251,21 +328,40 @@ function renderFearless() {
   }
 }
 
+function sideLabel(side, revealNames) {
+  const game = puzzle && puzzle.game;
+  if (revealNames && game) return side === "b" ? game.bt || "Blue" : game.rt || "Red";
+  return side === "b" ? "Blue" : "Red";
+}
+
 function renderDraft() {
   const game = puzzle.game;
   const info = seriesMeta[game.g] || {};
-  els.blueName.textContent = game.bt || "Blue";
-  els.redName.textContent = game.rt || "Red";
+  const revealNames = mode === "winner" && solved;
+  els.blueName.textContent = sideLabel("b", revealNames);
+  els.redName.textContent = sideLabel("r", revealNames);
   renderBans(els.blueBans, game.bb);
   renderBans(els.redBans, game.rb);
-  renderPicks(els.bluePicks, game.b, "b");
-  renderPicks(els.redPicks, game.r, "r");
+  renderPicks(els.bluePicks, game.b, game.bp, "b");
+  renderPicks(els.redPicks, game.r, game.rp, "r");
   renderFearless();
   const gameBit = info.n ? "Game " + info.n + (info.of > 1 ? " of " + info.of : "") : "Game";
-  els.meta.textContent = (game.l || "") + " · " + (game.d || "") + " · " + (game.p || "") + " · " + gameBit;
-  els.hint.textContent = solved
-    ? champName(puzzle.id) + " · " + puzzle.role
-    : "One " + puzzle.role + " pick is hidden. Click a champion to guess.";
+  const bits = [game.l || "", game.p || "", gameBit];
+  if (mode === "pick") bits.unshift(game.d || "");
+  els.meta.textContent = bits.filter(Boolean).join(" · ");
+  if (els.time) {
+    els.time.hidden = !(mode === "winner" && showTime);
+    els.time.textContent = mode === "winner" && showTime ? fmtLength(game.gl) : "";
+  }
+  if (mode === "winner") {
+    els.hint.textContent = solved
+      ? (puzzle.winner === "b" ? "Blue" : "Red") + " won"
+      : "Guess which side won. Team names are hidden.";
+  } else {
+    els.hint.textContent = solved
+      ? champName(puzzle.id) + " · " + puzzle.role
+      : "One " + puzzle.role + " pick is hidden. Click a champion to guess.";
+  }
 }
 
 function setFeedback(text, tone) {
@@ -274,47 +370,100 @@ function setFeedback(text, tone) {
 }
 
 function renderScore() {
-  els.score.textContent = correct + " / " + rounds + " correct";
+  const rec = stats[mode];
+  els.score.textContent = rec.correct + " / " + rec.rounds + " correct";
+}
+
+function renderModes() {
+  els.modes.innerHTML = "";
+  for (let i = 0; i < MODES.length; i += 1) {
+    const item = MODES[i];
+    const button = document.createElement("button");
+    button.type = "button";
+    button.textContent = item.label;
+    if (item.id === mode) button.className = "active";
+    button.addEventListener("click", function () {
+      if (mode === item.id) return;
+      mode = item.id;
+      const url = new URL(location.href);
+      url.searchParams.set("mode", mode);
+      history.replaceState({}, "", url);
+      nextPuzzle(false);
+    });
+    els.modes.append(button);
+  }
+}
+
+function setModeChrome() {
+  const winner = mode === "winner";
+  if (els.pool) els.pool.hidden = winner;
+  if (els.winnerActions) els.winnerActions.hidden = !winner || solved;
+  if (els.timeToggle) els.timeToggle.hidden = !winner;
+  if (els.blueBtn) els.blueBtn.disabled = solved;
+  if (els.redBtn) els.redBtn.disabled = solved;
 }
 
 function nextPuzzle(countRound) {
-  if (countRound) rounds += 1;
-  puzzle = pickPuzzle();
+  if (countRound) stats[mode].rounds += 1;
+  puzzle = mode === "winner" ? pickWinnerPuzzle() : pickHiddenPuzzle();
   guessed = {};
   solved = false;
   search = "";
   if (els.search) els.search.value = "";
-  els.title.textContent = "Who is missing?";
+  els.title.textContent = mode === "winner" ? "Who won?" : "Who is missing?";
   els.skip.textContent = "Skip";
   setFeedback("");
+  renderModes();
+  setModeChrome();
   if (!puzzle) {
     els.hint.textContent = "No complete drafts to guess from.";
     return;
   }
   renderDraft();
-  renderRoles();
-  renderGrid();
+  if (mode === "pick") {
+    renderRoles();
+    renderGrid();
+  }
+  renderScore();
+}
+
+function resolveRound(ok, message, tone) {
+  solved = true;
+  if (ok) stats[mode].correct += 1;
+  stats[mode].rounds += 1;
+  els.skip.textContent = "Next";
+  setFeedback(message, tone);
+  setModeChrome();
+  renderDraft();
+  if (mode === "pick") renderGrid();
   renderScore();
 }
 
 function guessChamp(id) {
-  if (!puzzle || solved || !id) return;
+  if (mode !== "pick" || !puzzle || solved || !id) return;
   if (guessed[id]) return;
   guessed[id] = true;
   if (id === puzzle.id) {
-    solved = true;
-    correct += 1;
-    rounds += 1;
     els.title.textContent = champName(id);
-    els.skip.textContent = "Next";
-    setFeedback("Correct — " + champName(id), "up");
-    renderDraft();
-    renderGrid();
-    renderScore();
+    resolveRound(true, "Correct — " + champName(id), "up");
     return;
   }
   setFeedback("Not " + champName(id), "down");
   renderGrid();
+}
+
+function guessWinner(side) {
+  if (mode !== "winner" || !puzzle || solved) return;
+  const win = puzzle.winner === side;
+  const label = side === "b" ? "Blue" : "Red";
+  const actual = puzzle.winner === "b" ? "Blue" : "Red";
+  const names = (puzzle.game.bt || "Blue") + " vs " + (puzzle.game.rt || "Red");
+  els.title.textContent = actual + " won";
+  resolveRound(
+    win,
+    (win ? "Correct — " : "Wrong — ") + actual + " won · " + names,
+    win ? "up" : "down"
+  );
 }
 
 function renderRoles() {
@@ -355,7 +504,7 @@ function renderGrid() {
     const wrap = document.createElement("div");
     wrap.className = "champ";
     if (guessed[champ.id]) wrap.classList.add("disabled");
-    if (solved && champ.id === puzzle.id) wrap.classList.add("suggested");
+    if (solved && puzzle && champ.id === puzzle.id) wrap.classList.add("suggested");
     wrap.title = champ.name;
     const img = document.createElement("img");
     img.src = portrait(champ.id);
@@ -395,16 +544,28 @@ function boot() {
     const built = buildSeries(bundle.games);
     seriesMeta = built.meta;
     seriesGames = built.groups;
+    const params = new URLSearchParams(location.search);
+    if (params.get("mode") === "winner") mode = "winner";
     els.skip.addEventListener("click", function () {
       nextPuzzle(!solved);
     });
-    els.search.addEventListener("input", function () {
-      search = els.search.value;
-      renderGrid();
-    });
+    if (els.search) {
+      els.search.addEventListener("input", function () {
+        search = els.search.value;
+        renderGrid();
+      });
+    }
+    if (els.blueBtn) els.blueBtn.addEventListener("click", function () { guessWinner("b"); });
+    if (els.redBtn) els.redBtn.addEventListener("click", function () { guessWinner("r"); });
+    if (els.showTime) {
+      els.showTime.addEventListener("change", function () {
+        showTime = els.showTime.checked;
+        if (puzzle) renderDraft();
+      });
+    }
     nextPuzzle(false);
     showApp();
-    els.search.focus();
+    if (mode === "pick" && els.search) els.search.focus();
   } catch (error) {
     if (els.bootStatus) els.bootStatus.textContent = error.message;
   }

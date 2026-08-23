@@ -2373,3 +2373,69 @@ body.guess-page {
 .guess-pool .grid {
   overflow: visible;
 }
+
+.guess-scores {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 0 10px 8px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--muted);
+  background: linear-gradient(transparent, rgba(0, 0, 0, 0.78));
+}
+
+.guess-winner-actions {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.guess-side-btn {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--panel-2);
+  color: var(--text);
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.guess-side-btn.blue {
+  box-shadow: inset 3px 0 0 var(--blue);
+}
+
+.guess-side-btn.red {
+  box-shadow: inset 3px 0 0 var(--red);
+}
+
+.guess-side-btn:hover:not(:disabled) {
+  border-color: var(--line-strong);
+}
+
+.guess-side-btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.guess-time {
+  margin: 4px 0 0;
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--gold-bright);
+}
+
+.guess-time-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 14px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
