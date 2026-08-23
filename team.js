@@ -319,9 +319,9 @@ function renderTeamDirectory() {
       { key: "champ", label: "Pool" },
       { key: "games", label: "Games", num: true },
       { key: "winRate", label: "WR", num: true },
-      { key: "fb", label: "FB%", num: true },
-      { key: "ft", label: "FT%", num: true },
-      { key: "fd", label: "FD%", num: true },
+      { key: "fb", label: "First blood", num: true },
+      { key: "ft", label: "First tower", num: true },
+      { key: "fd", label: "First dragon", num: true },
       { key: "kda", label: "KDA", num: true },
     ],
     dirSort,
@@ -409,9 +409,9 @@ function renderTeamDetail() {
   const fb = firstRate(rec.fb, rec.fbN);
   const ft = firstRate(rec.ft, rec.ftN);
   const fd = firstRate(rec.fd, rec.fdN);
-  teamEls.summary.append(tile("FB%", fmtPct(fb), fb >= 0.5 ? "up" : fb != null ? "down" : ""));
-  teamEls.summary.append(tile("FT%", fmtPct(ft), ft >= 0.5 ? "up" : ft != null ? "down" : ""));
-  teamEls.summary.append(tile("FD%", fmtPct(fd), fd >= 0.5 ? "up" : fd != null ? "down" : ""));
+  teamEls.summary.append(tile("First blood", fmtPct(fb), fb >= 0.5 ? "up" : fb != null ? "down" : ""));
+  teamEls.summary.append(tile("First tower", fmtPct(ft), ft >= 0.5 ? "up" : ft != null ? "down" : ""));
+  teamEls.summary.append(tile("First dragon", fmtPct(fd), fd >= 0.5 ? "up" : fd != null ? "down" : ""));
 
   const roster = rosterRows(rec);
   teamEls.boardTitle.textContent = "Roster";

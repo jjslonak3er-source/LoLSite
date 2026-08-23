@@ -765,7 +765,7 @@ function render() {
     leagueCell.textContent = game.l || "—";
     const gameNo = document.createElement("td");
     gameNo.className = "game-no";
-    gameNo.textContent = meta.n ? "G" + meta.n : "—";
+    gameNo.textContent = meta.n ? String(meta.n) : "—";
     if (meta.of > 1) gameNo.title = "Game " + meta.n + " of " + meta.of;
     const patchCell = document.createElement("td");
     patchCell.textContent = game.p || "—";
