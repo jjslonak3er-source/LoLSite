@@ -335,6 +335,19 @@ function ratingRel(name, roleKey) {
   return ratingField(name, roleKey, "cs");
 }
 
+function ratingBlend(score, rel) {
+  const hasScore = score != null && isFinite(score);
+  const hasRel = rel != null && isFinite(rel);
+  if (hasScore && hasRel) return (score + rel) / 2;
+  if (hasScore) return score;
+  if (hasRel) return rel;
+  return null;
+}
+
+function ratingVsBase(name, roleKey) {
+  return ratingBlend(ratingScore(name, roleKey), ratingRel(name, roleKey));
+}
+
 function vsTeamScore(score, teamAvg) {
   if (score == null || !isFinite(score) || teamAvg == null || !isFinite(teamAvg)) return null;
   return Math.round((score + (score - teamAvg)) * 100) / 100;
@@ -371,7 +384,7 @@ function teamAvgMap() {
   for (let i = 0; i < keys.length; i += 1) {
     const rec = players[keys[i]];
     const team = mostCommon(rec.teams);
-    const score = ratingScore(rec.name, mostCommon(rec.roles));
+    const score = ratingVsBase(rec.name, mostCommon(rec.roles));
     if (!team || score == null || !isFinite(score)) continue;
     const bag = bags[team] || (bags[team] = { n: 0, s: 0 });
     bag.n += 1;
@@ -388,7 +401,7 @@ function teamAvgMap() {
 }
 
 function ratingVsTeam(name, roleKey, teamName) {
-  return vsTeamScore(ratingScore(name, roleKey), teamAvgMap()[teamName]);
+  return vsTeamScore(ratingVsBase(name, roleKey), teamAvgMap()[teamName]);
 }
 
 function liveFiltersOn() {
@@ -1914,7 +1927,7 @@ function renderDirectory() {
     const vs = document.createElement("td");
     vs.className = "num " + scoreTone(row.vs);
     vs.textContent = fmtScore(row.vs);
-    vs.title = "Score vs team average — above teammates inflates, below deflates";
+    vs.title = "Average of Score and Rel vs team average — above teammates inflates, below deflates";
     const team = document.createElement("td");
     team.textContent = row.team || "—";
     const main = document.createElement("td");

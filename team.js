@@ -264,13 +264,15 @@ function rosterRows(rec) {
   let teamAvg = 0;
   let teamN = 0;
   for (let i = 0; i < out.length; i += 1) {
-    if (out[i].score == null || !isFinite(out[i].score)) continue;
-    teamAvg += out[i].score;
+    const base = ratingBlend(out[i].score, out[i].rel);
+    out[i].vsBase = base;
+    if (base == null) continue;
+    teamAvg += base;
     teamN += 1;
   }
   teamAvg = teamN ? teamAvg / teamN : null;
   for (let i = 0; i < out.length; i += 1) {
-    out[i].vs = vsTeamScore(out[i].score, teamAvg);
+    out[i].vs = vsTeamScore(out[i].vsBase, teamAvg);
   }
   if (rosterSort === "role") {
     out.sort(function (a, b) {
@@ -477,7 +479,7 @@ function renderTeamDetail() {
       const vsCell = document.createElement("td");
       vsCell.className = "num " + scoreTone(row.vs);
       vsCell.textContent = fmtScore(row.vs);
-      vsCell.title = "Score vs team average — above teammates inflates, below deflates";
+      vsCell.title = "Average of Score and Rel vs team average — above teammates inflates, below deflates";
       const games = document.createElement("td");
       games.className = "num";
       games.textContent = String(row.games);
