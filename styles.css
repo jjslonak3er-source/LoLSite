@@ -2315,18 +2315,21 @@ body.guess-page {
 }
 
 .guess-draft {
-  grid-template-columns: minmax(340px, 1fr) 220px minmax(340px, 1fr);
+  grid-template-columns: 252px minmax(200px, 240px) 252px;
+  justify-content: center;
   min-height: 0;
   padding-top: 0;
 }
 
 .guess-draft .pick {
   flex: 0 0 auto;
-  min-height: 124px;
+  min-height: 0;
+  aspect-ratio: 16 / 11;
 }
 
 .guess-draft .pick-art {
-  object-position: center 16%;
+  object-fit: cover;
+  object-position: center 12%;
 }
 
 .pick.guess-hidden {
