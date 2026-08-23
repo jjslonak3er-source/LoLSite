@@ -289,11 +289,12 @@ function pickNode(id, roleName, hidden, revealed, playerName) {
   const roleBtn = document.createElement("span");
   roleBtn.className = "role-btn";
   roleBtn.textContent = roleName;
-  meta.append(name, roleBtn);
-  node.append(meta);
+  meta.append(name);
   if (mode === "winner" && id) {
-    node.append(scoreLine(playerScore(playerName, roleName), champScore(id, roleName)));
+    meta.append(scoreLine(playerScore(playerName, roleName), champScore(id, roleName)));
   }
+  meta.append(roleBtn);
+  node.append(meta);
   return node;
 }
 

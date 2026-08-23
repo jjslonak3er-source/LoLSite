@@ -2315,21 +2315,8 @@ body.guess-page {
 }
 
 .guess-draft {
-  grid-template-columns: 252px minmax(200px, 240px) 252px;
-  justify-content: center;
-  min-height: 0;
+  min-height: calc(100vh - 118px);
   padding-top: 0;
-}
-
-.guess-draft .pick {
-  flex: 0 0 auto;
-  min-height: 0;
-  aspect-ratio: 16 / 11;
-}
-
-.guess-draft .pick-art {
-  object-fit: cover;
-  object-position: center 12%;
 }
 
 .pick.guess-hidden {
@@ -2379,16 +2366,15 @@ body.guess-page {
 }
 
 .guess-scores {
-  position: relative;
-  z-index: 1;
   display: flex;
-  justify-content: space-between;
-  gap: 8px;
-  padding: 0 10px 8px;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 1px;
   font-size: 11px;
   font-weight: 700;
+  font-variant-numeric: tabular-nums;
   color: var(--muted);
-  background: linear-gradient(transparent, rgba(0, 0, 0, 0.78));
+  text-shadow: 0 1px 8px #000;
 }
 
 .guess-winner-actions {
