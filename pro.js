@@ -6,11 +6,13 @@ const SOLO = window.RIFT_META_MODE === "solo";
 const MIN_GAMES = 2;
 const SOLO_MIN_ROLE_GAMES = 1000;
 const RECENT_DAYS = 60;
-const META_POP = SOLO ? 0.25 : 1;
-const META_WR = 0.1;
-const META_PAIR = 0.06;
-const META_VS = SOLO ? 0.12 : 0.06;
-const META_SPIKE = SOLO ? 2.4 : 0;
+const META_POP_SCALE = 4.7;
+const META_POP_PRIOR_FLOOR = SOLO ? 400 : 8;
+const META_WR = 0;
+const META_PAIR = 0;
+const META_VS = 0;
+const META_SPIKE = 0;
+const META_UNIQUE = 8;
 const SHARP_COUNTER_DELTA = -2;
 const META_PRIOR = 18;
 const META_MIN_GAMES = 8;
@@ -20,6 +22,8 @@ const HIGH_META_MIN = 6;
 const INTO_MIN_MATCHUPS = 2;
 const POTENTIAL_SAME_ROLE = 1;
 const POTENTIAL_OTHER_ROLE = 0.2;
+const POTENTIAL_PAIR_SAME_ROLE = 0.2;
+const POTENTIAL_PAIR_OTHER_ROLE = 1;
 
 const els = {
   boot: document.getElementById("boot"),
@@ -458,14 +462,26 @@ function spikeExposure(map, rates) {
   return den ? hurt / den : 0;
 }
 
-function metaScore(id, picks, winRate, data, rates) {
-  const pop = data.games ? picks / data.games : 0;
-  const popPart = META_POP * pop * 100;
-  const wrShrink = picks / (picks + META_WR_PRIOR);
-  const wrPart = META_WR * wrShrink * (winRate - 0.5) * 100;
+function pickPrior(rows) {
+  const counts = [];
+  for (let i = 0; i < rows.length; i += 1) {
+    if (rows[i].picks) counts.push(rows[i].picks);
+  }
+  counts.sort(function (a, b) {
+    return a - b;
+  });
+  const median = counts.length ? counts[Math.floor(counts.length / 2)] : META_POP_PRIOR_FLOOR;
+  return Math.max(META_POP_PRIOR_FLOOR, median);
+}
+
+function metaScore(id, picks, winRate, data, rates, prior) {
+  const popPart = META_POP_SCALE * (picks / (picks + prior));
+  const wrPart = META_WR
+    ? META_WR * (picks / (picks + META_WR_PRIOR)) * (winRate - 0.5) * 100
+    : 0;
   const vsMap = (role === "All" ? data.matchupsAll : data.matchupsLane)[id];
   const spikeMap = (data.matchupsLane && data.matchupsLane[id]) || vsMap;
-  const pairPart = META_PAIR * weightedDelta(data.pairs[id], rates);
+  const pairPart = META_PAIR * weightedDelta(data.pairs && data.pairs[id], rates);
   const vsPart = META_VS * weightedDelta(vsMap, rates);
   const spikePart = -META_SPIKE * spikeExposure(spikeMap, rates);
   return {
@@ -495,9 +511,9 @@ function meanStd(values) {
   return { mean: mean, std: std || 1 };
 }
 
-function topMetaSlice(rows, share, min) {
+function topPopSlice(rows, share, min) {
   const ranked = rows.slice().sort(function (a, b) {
-    return b.meta - a.meta;
+    return b.picks - a.picks;
   });
   const n = Math.min(ranked.length, Math.max(min, Math.ceil(ranked.length * share)));
   return ranked.slice(0, n);
@@ -506,12 +522,12 @@ function topMetaSlice(rows, share, min) {
 function highMetaWeights(rows) {
   const entries = {};
   function add(row) {
-    const weight = Math.max(0.25, row.meta);
+    const weight = Math.max(0.25, row.picks);
     if (!entries[row.id] || weight > entries[row.id].weight) {
       entries[row.id] = { weight: weight, role: row.role };
     }
   }
-  const global = topMetaSlice(rows, HIGH_META_SHARE, HIGH_META_MIN);
+  const global = topPopSlice(rows, HIGH_META_SHARE, HIGH_META_MIN);
   for (let i = 0; i < global.length; i += 1) add(global[i]);
   const byRole = {};
   for (let i = 0; i < rows.length; i += 1) {
@@ -523,10 +539,23 @@ function highMetaWeights(rows) {
   const roles = Object.keys(byRole);
   for (let i = 0; i < roles.length; i += 1) {
     const group = byRole[roles[i]];
-    const local = topMetaSlice(group, HIGH_META_SHARE, Math.min(4, group.length));
+    const local = topPopSlice(group, HIGH_META_SHARE, Math.min(4, group.length));
     for (let j = 0; j < local.length; j += 1) add(local[j]);
   }
   return entries;
+}
+
+function roleCrowding(usRole, weights) {
+  if (!usRole) return 0;
+  const ids = Object.keys(weights);
+  let same = 0;
+  let total = 0;
+  for (let i = 0; i < ids.length; i += 1) {
+    const entry = weights[ids[i]];
+    total += entry.weight;
+    if (entry.role === usRole) same += entry.weight;
+  }
+  return total ? same / total : 0;
 }
 
 function soloMatchups() {
@@ -546,6 +575,23 @@ function soloMatchup(us, them) {
   return null;
 }
 
+function soloPairings() {
+  return (window.RIFT_SYNERGIES && window.RIFT_SYNERGIES.synergies) || {};
+}
+
+function soloPairing(us, them) {
+  const pairs = soloPairings();
+  const direct = pairs[us] && pairs[us][them];
+  if (direct && typeof direct.delta === "number") {
+    return { delta: direct.delta, games: direct.games || 0 };
+  }
+  const inverse = pairs[them] && pairs[them][us];
+  if (inverse && typeof inverse.delta === "number") {
+    return { delta: inverse.delta, games: inverse.games || 0 };
+  }
+  return null;
+}
+
 function matchupSignal(id, them, same, data) {
   if (!SOLO) {
     const solo = soloMatchup(id, them);
@@ -558,7 +604,18 @@ function matchupSignal(id, them, same, data) {
   return { delta: delta(rec.wins, rec.games), games: rec.games };
 }
 
-function intoHighMeta(id, usRole, data, weights) {
+function pairSignal(id, them, data) {
+  if (!SOLO) {
+    const solo = soloPairing(id, them);
+    if (solo && solo.games >= META_MIN_GAMES) return solo;
+  }
+  const rec = data.pairs && data.pairs[id] && data.pairs[id][them];
+  if (!rec || rec.games < META_MIN_GAMES) return null;
+  const shift = typeof rec.delta === "number" ? rec.delta : delta(rec.wins, rec.games);
+  return { delta: shift, games: rec.games };
+}
+
+function poolWeightedDelta(id, usRole, data, weights, kind) {
   const ids = Object.keys(weights);
   let num = 0;
   let den = 0;
@@ -569,9 +626,17 @@ function intoHighMeta(id, usRole, data, weights) {
     if (them === id) continue;
     const entry = weights[them];
     const same = !!(usRole && entry.role && entry.role === usRole);
-    const rec = matchupSignal(id, them, same, data);
+    const rec =
+      kind === "pair" ? pairSignal(id, them, data) : matchupSignal(id, them, same, data);
     if (!rec) continue;
-    const roleW = same ? POTENTIAL_SAME_ROLE : POTENTIAL_OTHER_ROLE;
+    const roleW =
+      kind === "pair"
+        ? same
+          ? POTENTIAL_PAIR_SAME_ROLE
+          : POTENTIAL_PAIR_OTHER_ROLE
+        : same
+          ? POTENTIAL_SAME_ROLE
+          : POTENTIAL_OTHER_ROLE;
     const weight = entry.weight * roleW * (rec.games / (rec.games + META_PRIOR));
     if (weight <= 0) continue;
     num += weight * rec.delta;
@@ -579,31 +644,55 @@ function intoHighMeta(id, usRole, data, weights) {
     hits += 1;
     if (same) sameHits += 1;
   }
-  if (!den || (sameHits < 1 && hits < INTO_MIN_MATCHUPS)) return null;
+  if (!den) return null;
+  if (kind === "pair") {
+    if (hits < INTO_MIN_MATCHUPS) return null;
+  } else if (sameHits < 1 && hits < INTO_MIN_MATCHUPS) {
+    return null;
+  }
   return num / den;
+}
+
+function intoHighMeta(id, usRole, data, weights) {
+  return poolWeightedDelta(id, usRole, data, weights, "vs");
+}
+
+function withHighMeta(id, usRole, data, weights) {
+  return poolWeightedDelta(id, usRole, data, weights, "pair");
+}
+
+function poolFit(intoMeta, withMeta) {
+  if (intoMeta != null && withMeta != null) return (intoMeta + withMeta) / 2;
+  if (intoMeta != null) return intoMeta;
+  if (withMeta != null) return withMeta;
+  return null;
 }
 
 function attachPotential(rows, data) {
   const weights = highMetaWeights(rows);
   const metas = [];
-  const intos = [];
+  const fits = [];
   for (let i = 0; i < rows.length; i += 1) {
     const row = rows[i];
     row.intoMeta = intoHighMeta(row.id, row.role, data, weights);
+    row.withMeta = withHighMeta(row.id, row.role, data, weights);
+    row.uniqueMeta = -META_UNIQUE * roleCrowding(row.role, weights);
+    const fit = poolFit(row.intoMeta, row.withMeta);
+    row.poolFit = fit == null ? null : fit + row.uniqueMeta;
     metas.push(row.meta);
-    intos.push(row.intoMeta);
+    fits.push(row.poolFit);
   }
   const metaStat = meanStd(metas);
-  const intoStat = meanStd(intos);
+  const fitStat = meanStd(fits);
   for (let i = 0; i < rows.length; i += 1) {
     const row = rows[i];
-    if (row.intoMeta == null) {
+    if (row.poolFit == null) {
       row.potential = null;
       continue;
     }
-    const intoZ = (row.intoMeta - intoStat.mean) / intoStat.std;
+    const fitZ = (row.poolFit - fitStat.mean) / fitStat.std;
     const metaZ = (row.meta - metaStat.mean) / metaStat.std;
-    row.potential = intoZ - metaZ;
+    row.potential = fitZ - metaZ;
   }
 }
 
@@ -652,7 +741,6 @@ function buildRows(data) {
     }
     const winRate = picks ? wins / picks : 0;
     wins = Math.round(wins);
-    const score = metaScore(id, picks, winRate, data, rates);
     rows.push({
       id: id,
       name: champName(id),
@@ -661,11 +749,21 @@ function buildRows(data) {
       pickRate: data.games ? picks / data.games : 0,
       wins: wins,
       winRate: winRate,
-      meta: score.meta,
-      metaParts: score,
+      meta: 0,
+      metaParts: null,
       intoMeta: null,
+      withMeta: null,
+      uniqueMeta: null,
+      poolFit: null,
       potential: null,
     });
+  }
+  const prior = pickPrior(rows);
+  for (let i = 0; i < rows.length; i += 1) {
+    const row = rows[i];
+    const score = metaScore(row.id, row.picks, row.winRate, data, rates, prior);
+    row.meta = score.meta;
+    row.metaParts = score;
   }
   attachPotential(rows, data);
   const shown = [];
@@ -826,16 +924,12 @@ function renderTable(data) {
     meta.textContent = fmtDelta(row.meta);
     const parts = row.metaParts;
     if (parts) {
-      meta.title =
-        "pop " +
-        fmtDelta(parts.pop) +
-        "\nwr " +
-        fmtDelta(parts.wr) +
-        "\npair " +
-        fmtDelta(parts.pair) +
-        "\nvs " +
-        fmtDelta(parts.vs) +
-        (parts.spike ? "\nspike " + fmtDelta(parts.spike) : "");
+      const bits = ["pop " + fmtDelta(parts.pop)];
+      if (parts.wr) bits.push("wr " + fmtDelta(parts.wr));
+      if (parts.pair) bits.push("pair " + fmtDelta(parts.pair));
+      if (parts.vs) bits.push("vs " + fmtDelta(parts.vs));
+      if (parts.spike) bits.push("spike " + fmtDelta(parts.spike));
+      meta.title = bits.join("\n");
     }
 
     const potential = document.createElement("td");
@@ -849,6 +943,11 @@ function renderTable(data) {
         "into high-meta" +
         (SOLO ? " " : " (LoLalytics) ") +
         (row.intoMeta == null ? "—" : fmtDelta(row.intoMeta)) +
+        "\nwith high-meta" +
+        (SOLO ? " " : " (LoLalytics) ") +
+        (row.withMeta == null ? "—" : fmtDelta(row.withMeta)) +
+        "\nunique " +
+        fmtDelta(row.uniqueMeta || 0) +
         "\ncurrent meta " +
         fmtDelta(row.meta);
     }
