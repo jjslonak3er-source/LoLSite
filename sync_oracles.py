@@ -3,7 +3,8 @@
 
 Google Drive does not allow browser fetches (CORS) and this file is often
 quota-throttled, so the site loads a compact bundle. Re-run this script to
-refresh. Tries Drive first, then the newest local Downloads copy.
+refresh. Tries Drive first (with retries on CI), then the newest local
+Downloads copy. The daily GitHub Action must fail if Drive never returns a CSV.
 """
 
 from __future__ import annotations
@@ -11,21 +12,20 @@ from __future__ import annotations
 import argparse
 import csv
 import json
+import os
 import re
 import shutil
 import subprocess
 import sys
+import time
 from collections import defaultdict
 from datetime import datetime, timedelta
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-DRIVE_ID = "1hnpbrUpBMS1TZI7IovfpKeZfWJH1Aptm"
-DRIVE_URLS = [
-    f"https://drive.usercontent.google.com/download?id={DRIVE_ID}&export=download&confirm=t",
-    f"https://drive.google.com/uc?export=download&id={DRIVE_ID}&confirm=t",
-]
+DEFAULT_DRIVE_ID = "1hnpbrUpBMS1TZI7IovfpKeZfWJH1Aptm"
 DRIVE_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/128.0.0.0"
+DRIVE_RETRY_SECONDS = (0, 20, 40, 80, 120, 180, 240, 300)
 CONFIRM_RE = re.compile(r'name=["\']confirm["\']\s+value=["\']([^"\']+)', re.I)
 UUID_RE = re.compile(r'name=["\']uuid["\']\s+value=["\']([^"\']+)', re.I)
 HREF_CONFIRM_RE = re.compile(r"[?&]confirm=([0-9A-Za-z_-]+)")
@@ -76,6 +76,17 @@ def load_id_map(champions_js: Path) -> dict[str, str]:
     return mapping
 
 
+def drive_id() -> str:
+    return (os.environ.get("ORACLES_DRIVE_ID") or DEFAULT_DRIVE_ID).strip()
+
+
+def drive_urls(file_id: str) -> list[str]:
+    return [
+        f"https://drive.usercontent.google.com/download?id={file_id}&export=download&confirm=t",
+        f"https://drive.google.com/uc?export=download&id={file_id}&confirm=t",
+    ]
+
+
 def looks_like_csv(path: Path) -> bool:
     if not path.exists() or path.stat().st_size < 100:
         return False
@@ -84,7 +95,14 @@ def looks_like_csv(path: Path) -> bool:
     return start.lower().startswith("gameid")
 
 
-def _curl_get(curl: str, url: str, dest: Path, cookies: Path) -> bool:
+def _html_hint(html: str) -> str:
+    compact = re.sub(r"\s+", " ", html).strip()
+    if "quota" in compact.lower() or "too many users" in compact.lower():
+        return "Google Drive quota page"
+    return compact[:240] or "(empty)"
+
+
+def _curl_get(curl: str, url: str, dest: Path, cookies: Path, extra: list[str] | None = None) -> bool:
     dest.parent.mkdir(parents=True, exist_ok=True)
     try:
         subprocess.run(
@@ -92,6 +110,10 @@ def _curl_get(curl: str, url: str, dest: Path, cookies: Path) -> bool:
                 curl,
                 "-sL",
                 "--http1.1",
+                "--retry",
+                "2",
+                "--retry-delay",
+                "3",
                 "--max-time",
                 "180",
                 "-A",
@@ -100,6 +122,7 @@ def _curl_get(curl: str, url: str, dest: Path, cookies: Path) -> bool:
                 str(cookies),
                 "-b",
                 str(cookies),
+                *(extra or []),
                 "-o",
                 str(dest),
                 url,
@@ -112,7 +135,7 @@ def _curl_get(curl: str, url: str, dest: Path, cookies: Path) -> bool:
         return False
 
 
-def _drive_confirm_url(html: str) -> str | None:
+def _drive_confirm_url(html: str, file_id: str) -> str | None:
     lowered = html.lower()
     if "quota" in lowered or "too many users" in lowered:
         return None
@@ -124,7 +147,7 @@ def _drive_confirm_url(html: str) -> str | None:
     uuid = uuid_match.group(1) if uuid_match else ""
     if not confirm and not uuid:
         return None
-    url = f"https://drive.usercontent.google.com/download?id={DRIVE_ID}&export=download"
+    url = f"https://drive.usercontent.google.com/download?id={file_id}&export=download"
     if confirm:
         url += f"&confirm={confirm}"
     if uuid:
@@ -132,40 +155,104 @@ def _drive_confirm_url(html: str) -> str | None:
     return url
 
 
-def download_drive(dest: Path) -> bool:
+def _keep_if_csv(tmp: Path, dest: Path, via: str) -> bool:
+    if not looks_like_csv(tmp):
+        return False
+    shutil.move(str(tmp), str(dest))
+    print(f"  saved {dest.stat().st_size:,} bytes ({via})")
+    return True
+
+
+def _download_drive_api(dest: Path, file_id: str, curl: str, cookies: Path) -> bool:
+    key = (os.environ.get("ORACLES_DRIVE_API_KEY") or os.environ.get("GOOGLE_API_KEY") or "").strip()
+    if not key:
+        return False
+    url = f"https://www.googleapis.com/drive/v3/files/{file_id}?alt=media&acknowledgeAbuse=true&key={key}"
+    tmp = dest.with_name(dest.name + ".api")
+    print("Trying Drive API")
+    try:
+        if _curl_get(curl, url, tmp, cookies) and _keep_if_csv(tmp, dest, "Drive API"):
+            return True
+        if tmp.exists():
+            print(f"  Drive API did not return a CSV: {_html_hint(tmp.read_text(encoding='utf-8', errors='replace')[:20000])}")
+        return False
+    finally:
+        if tmp.exists():
+            tmp.unlink()
+
+
+def _download_gdown(dest: Path, file_id: str) -> bool:
+    try:
+        import gdown
+    except ImportError:
+        return False
+    tmp = dest.with_name(dest.name + ".gdown")
+    print("Trying gdown")
+    try:
+        gdown.download(id=file_id, output=str(tmp), quiet=False, fuzzy=True)
+        if _keep_if_csv(tmp, dest, "gdown"):
+            return True
+        if tmp.exists():
+            print(f"  gdown did not return a CSV: {_html_hint(tmp.read_text(encoding='utf-8', errors='replace')[:20000])}")
+        return False
+    except Exception as exc:
+        print(f"  gdown failed: {exc}")
+        return False
+    finally:
+        if tmp.exists():
+            tmp.unlink()
+
+
+def _download_drive_once(dest: Path) -> bool:
     dest.parent.mkdir(parents=True, exist_ok=True)
     curl = shutil.which("curl") or shutil.which("curl.exe")
     if not curl:
         print("curl is not installed.")
         return False
+    file_id = drive_id()
     tmp = dest.with_name(dest.name + ".part")
     cookies = dest.with_name(dest.name + ".cookies")
     try:
-        for url in DRIVE_URLS:
+        if _download_drive_api(dest, file_id, curl, cookies):
+            return True
+        for url in drive_urls(file_id):
             print(f"Trying Drive: {url}")
             if not _curl_get(curl, url, tmp, cookies):
                 continue
-            if looks_like_csv(tmp):
-                shutil.move(str(tmp), str(dest))
-                print(f"  saved {dest.stat().st_size:,} bytes")
+            if _keep_if_csv(tmp, dest, "Drive"):
                 return True
             html = tmp.read_text(encoding="utf-8", errors="replace")[:20000]
-            confirm_url = _drive_confirm_url(html)
+            confirm_url = _drive_confirm_url(html, file_id)
             if not confirm_url:
-                print("  Drive did not return a CSV (quota page or HTML interstitial).")
+                print(f"  Drive did not return a CSV: {_html_hint(html)}")
                 continue
             print(f"  confirm page; retrying {confirm_url}")
-            if _curl_get(curl, confirm_url, tmp, cookies) and looks_like_csv(tmp):
-                shutil.move(str(tmp), str(dest))
-                print(f"  saved {dest.stat().st_size:,} bytes")
+            if _curl_get(curl, confirm_url, tmp, cookies) and _keep_if_csv(tmp, dest, "Drive confirm"):
                 return True
-            print("  Drive did not return a CSV (quota page or HTML interstitial).")
-        return False
+            hint = tmp.read_text(encoding="utf-8", errors="replace")[:20000] if tmp.exists() else ""
+            print(f"  Drive did not return a CSV: {_html_hint(hint)}")
+        return _download_gdown(dest, file_id)
     finally:
         if tmp.exists():
             tmp.unlink()
         if cookies.exists():
             cookies.unlink()
+
+
+def download_drive(dest: Path) -> bool:
+    in_ci = bool(os.environ.get("GITHUB_ACTIONS"))
+    attempts = int(os.environ.get("ORACLES_DRIVE_ATTEMPTS") or ("8" if in_ci else "2"))
+    attempts = max(1, attempts)
+    for attempt in range(attempts):
+        if attempt:
+            wait = DRIVE_RETRY_SECONDS[min(attempt, len(DRIVE_RETRY_SECONDS) - 1)]
+            print(f"Drive retry {attempt + 1}/{attempts} in {wait}s...", flush=True)
+            time.sleep(wait)
+        elif attempts > 1:
+            print(f"Drive attempt 1/{attempts}", flush=True)
+        if _download_drive_once(dest):
+            return True
+    return False
 
 
 def newest_local_csv() -> Path | None:
@@ -195,8 +282,9 @@ def resolve_csv(explicit: Path | None, cache: Path) -> Path:
         print(f"Using {fallback}")
         return fallback
     raise SystemExit(
-        "Could not download the Google Drive file (CORS/quota) and no local "
-        "Oracle's Elixir CSV was found in Downloads."
+        "Could not download the Oracle's Elixir CSV from Google Drive "
+        "(quota or interstitial) and no local copy was found. "
+        "The refresh must fail instead of publishing stale pro games."
     )
 
 
@@ -461,7 +549,7 @@ def convert(csv_path: Path, champions_js: Path, recent_days: int = 60) -> dict:
     return {
         "source": "Oracle's Elixir",
         "file": str(csv_path),
-        "drive": f"https://drive.google.com/file/d/{DRIVE_ID}/view",
+        "drive": f"https://drive.google.com/file/d/{drive_id()}/view",
         "leagues": list(MAJOR_LEAGUES),
         "games": len(by_game),
         "from": min(dates) if dates else "",
@@ -534,7 +622,7 @@ def compact_games(by_game: dict, team_by_game: dict | None = None) -> dict:
 def write_games(bundle: dict, js_path: Path) -> None:
     encoded = json.dumps(bundle, separators=(",", ":"))
     js_path.write_text("window.RIFT_PRO_GAMES = " + encoded + ";\n", encoding="utf-8")
-    print(f"Wrote {bundle['count']:,} game logs")
+    print(f"Wrote {bundle['count']:,} game logs ({bundle.get('from')} to {bundle.get('to')})")
     print(f"  {js_path}")
 
 

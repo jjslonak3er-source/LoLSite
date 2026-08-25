@@ -3,6 +3,7 @@ name: Daily data refresh
 on:
   schedule:
     - cron: "0 7 * * *"
+    - cron: "30 19 * * *"
   workflow_dispatch:
     inputs:
       refresh:
@@ -37,7 +38,12 @@ jobs:
 
       - name: Refresh site data
         if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.refresh)
-        run: python update.py --workers 2
+        env:
+          ORACLES_DRIVE_ID: ${{ vars.ORACLES_DRIVE_ID }}
+          ORACLES_DRIVE_API_KEY: ${{ secrets.ORACLES_DRIVE_API_KEY }}
+        run: |
+          python -m pip install --quiet gdown
+          python update.py --workers 2
 
       - name: Commit updated bundles
         if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.refresh)
