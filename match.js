@@ -342,7 +342,9 @@ function renderExpect(game) {
     " · draft " +
     fmtDelta(rec.draft) +
     " · teams " +
-    fmtDelta(rec.team);
+    fmtDelta(rec.team) +
+    " · comfort " +
+    fmtDelta(rec.comfort);
   const red = node("div", "expect-side expect-red");
   red.append(node("strong", "", rec.red.toFixed(1) + "%"), node("span", "", game.rt || "Red"));
   const sub = node("p", "expect-sub");
@@ -359,6 +361,10 @@ function renderExpect(game) {
     toneClass(rec.team) +
     "\">" +
     fmtDelta(rec.team) +
+    "</span> · comfort <span class=\"" +
+    toneClass(rec.comfort) +
+    "\">" +
+    fmtDelta(rec.comfort) +
     "</span>";
   bar.append(blue, meter, red, sub);
   els.stats.append(bar);

@@ -3,6 +3,10 @@
   const ELO_MULT = 10;
   const PAIR_PRIOR = 400;
   const TEAM_SCORE_ELO = 25;
+  const CHAMP_SCORE_ELO = 3;
+  const CHAMP_SCORE_CLAMP = 15;
+  const CHAMP_RESIDUAL_CLAMP = 5;
+  const CHAMP_MIN_GAMES = 6;
   const ROLE_KEYS = ["top", "jng", "mid", "adc", "sup"];
 
   function matchups() {
@@ -15,6 +19,22 @@
 
   function ratings() {
     return (root.RIFT_PLAYER_RATINGS && root.RIFT_PLAYER_RATINGS.roles) || {};
+  }
+
+  function champLadders() {
+    return (root.RIFT_PLAYER_RATINGS && root.RIFT_PLAYER_RATINGS.champs) || {};
+  }
+
+  function champSlug(id) {
+    return String(id || "")
+      .toLowerCase()
+      .replace(/[^a-z0-9]/g, "");
+  }
+
+  function clampScore(value) {
+    const n = Number(value);
+    if (!isFinite(n)) return null;
+    return Math.max(-CHAMP_SCORE_CLAMP, Math.min(CHAMP_SCORE_CLAMP, n));
   }
 
   function playerKey(name) {
@@ -132,6 +152,53 @@
     return best;
   }
 
+  function playerChampScore(name, champId) {
+    const key = playerKey(name);
+    if (!key || !champId) return null;
+    const rec = champLadders()[champSlug(champId)];
+    const rows = rec && rec.players;
+    if (!rows) return null;
+    for (let i = 0; i < rows.length; i += 1) {
+      if (playerKey(rows[i].n) === key) {
+        if ((rows[i].g || 0) < CHAMP_MIN_GAMES) return null;
+        return clampScore(rows[i].s);
+      }
+    }
+    return null;
+  }
+
+  function champResidual(name, role, champId) {
+    const champ = playerChampScore(name, champId);
+    const overall = playerScore(name, role);
+    if (champ == null || overall == null || !isFinite(overall)) return null;
+    const raw = champ - overall;
+    return Math.max(-CHAMP_RESIDUAL_CLAMP, Math.min(CHAMP_RESIDUAL_CLAMP, raw));
+  }
+
+  function champLineupElo(blue, red) {
+    const byRole = function (rows) {
+      const map = {};
+      for (let i = 0; i < (rows || []).length; i += 1) {
+        const role = String(rows[i].role || "").toLowerCase();
+        if (role) map[role] = rows[i];
+      }
+      return map;
+    };
+    const us = byRole(blue);
+    const them = byRole(red);
+    let sum = 0;
+    for (let i = 0; i < ROLE_KEYS.length; i += 1) {
+      const role = ROLE_KEYS[i];
+      const b = us[role];
+      const r = them[role];
+      const bHit = b ? champResidual(b.name, b.role, b.id) : null;
+      const rHit = r ? champResidual(r.name, r.role, r.id) : null;
+      if (bHit == null && rHit == null) continue;
+      sum += (bHit || 0) - (rHit || 0);
+    }
+    return (sum / ROLE_KEYS.length) * CHAMP_SCORE_ELO;
+  }
+
   function rosterScore(rows) {
     let num = 0;
     let den = 0;
@@ -151,7 +218,8 @@
     const redScore = rosterScore(red);
     const teamElo =
       blueScore != null && redScore != null ? (blueScore - redScore) * TEAM_SCORE_ELO : 0;
-    const elo = (draft.elo || 0) + teamElo;
+    const comfortElo = champLineupElo(blue, red);
+    const elo = (draft.elo || 0) + teamElo + comfortElo;
     const p = expectedFromElo(elo);
     return {
       blue: p * 100,
@@ -159,6 +227,7 @@
       elo: elo,
       draft: draft.elo,
       team: teamElo,
+      comfort: comfortElo,
       counter: draft.counter,
       pairing: draft.pairing,
       blueScore: blueScore,
