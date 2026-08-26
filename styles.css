@@ -2339,6 +2339,18 @@ body.guess-page {
   padding: 6px 14px 14px;
 }
 
+.guess-tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+}
+
+.guess-tools .chips + .chips {
+  padding-left: 16px;
+  border-left: 1px solid var(--line);
+}
+
 .guess-fearless {
   padding: 10px 12px;
   background: var(--panel);
@@ -2363,8 +2375,8 @@ body.guess-page {
 }
 
 .guess-draft {
-  height: calc(100vh - 118px);
-  max-height: calc(100vh - 118px);
+  height: calc(100vh - 156px);
+  max-height: calc(100vh - 156px);
   min-height: 0;
   padding-top: 0;
 }

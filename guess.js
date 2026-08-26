@@ -6,6 +6,7 @@ const MODES = [
   { id: "pick", label: "Guess the pick" },
   { id: "winner", label: "Guess the winner" },
 ];
+const LEAGUES = ["All", "LPL", "LCK", "LEC", "LCS"];
 const PICK_TRIES = 3;
 
 const els = {
@@ -16,6 +17,8 @@ const els = {
   score: document.getElementById("guess-score"),
   skip: document.getElementById("guess-skip"),
   modes: document.getElementById("guess-modes"),
+  leagues: document.getElementById("guess-leagues"),
+  windows: document.getElementById("guess-windows"),
   fearless: document.getElementById("guess-fearless"),
   fearlessRow: document.getElementById("guess-fearless-row"),
   blueName: document.getElementById("guess-blue-name"),
@@ -50,6 +53,8 @@ let seriesGames = {};
 let search = "";
 let role = "All";
 let mode = "pick";
+let league = "All";
+let windowKey = "recent";
 let puzzle = null;
 let guessed = {};
 let misses = 0;
@@ -225,8 +230,40 @@ function priorPicks(game) {
   return out;
 }
 
+function addDays(iso, days) {
+  const date = new Date(iso + "T00:00:00");
+  date.setDate(date.getDate() + days);
+  return date.toISOString().slice(0, 10);
+}
+
+function cutoffDate() {
+  return window.RIFT_WINDOW ? window.RIFT_WINDOW.cutoff(bundle.to, addDays) : "";
+}
+
+function chipRow(root, items, current, onPick) {
+  if (!root) return;
+  root.innerHTML = "";
+  for (let i = 0; i < items.length; i += 1) {
+    const name = items[i];
+    const button = document.createElement("button");
+    button.type = "button";
+    button.textContent = name;
+    if (name === current) button.className = "active";
+    button.addEventListener("click", function () {
+      onPick(name);
+    });
+    root.append(button);
+  }
+}
+
 function completeRows() {
-  return (bundle.games || []).filter(completeGame);
+  const cutoff = cutoffDate();
+  return (bundle.games || []).filter(function (game) {
+    if (!completeGame(game)) return false;
+    if (league !== "All" && game.l !== league) return false;
+    if (cutoff && game.d < cutoff) return false;
+    return true;
+  });
 }
 
 function pickHiddenPuzzle() {
@@ -423,6 +460,38 @@ function renderScore() {
   els.score.textContent = rec.correct + " / " + rec.rounds + " correct";
 }
 
+function syncUrl() {
+  const url = new URL(location.href);
+  if (mode === "winner") url.searchParams.set("mode", mode);
+  else url.searchParams.delete("mode");
+  if (league !== "All") url.searchParams.set("league", league);
+  else url.searchParams.delete("league");
+  if (window.RIFT_WINDOW) {
+    url.searchParams.set("window", window.RIFT_WINDOW.param());
+  }
+  history.replaceState({}, "", url);
+}
+
+function applyFilters(nextLeague) {
+  if (nextLeague != null) {
+    if (nextLeague === league) return;
+    league = nextLeague;
+  }
+  if (window.RIFT_WINDOW) windowKey = window.RIFT_WINDOW.key;
+  nextPuzzle(false);
+}
+
+function renderFilters() {
+  chipRow(els.leagues, LEAGUES, league, function (name) {
+    applyFilters(name);
+  });
+  if (window.RIFT_WINDOW && els.windows) {
+    window.RIFT_WINDOW.mount(els.windows, function () {
+      applyFilters();
+    });
+  }
+}
+
 function renderModes() {
   els.modes.innerHTML = "";
   for (let i = 0; i < MODES.length; i += 1) {
@@ -434,9 +503,6 @@ function renderModes() {
     button.addEventListener("click", function () {
       if (mode === item.id) return;
       mode = item.id;
-      const url = new URL(location.href);
-      url.searchParams.set("mode", mode);
-      history.replaceState({}, "", url);
       nextPuzzle(false);
     });
     els.modes.append(button);
@@ -445,11 +511,31 @@ function renderModes() {
 
 function setModeChrome() {
   const winner = mode === "winner";
-  if (els.pool) els.pool.hidden = winner;
-  if (els.winnerActions) els.winnerActions.hidden = !winner || solved;
-  if (els.timeToggle) els.timeToggle.hidden = !winner;
-  if (els.blueBtn) els.blueBtn.disabled = solved;
-  if (els.redBtn) els.redBtn.disabled = solved;
+  if (els.pool) els.pool.hidden = winner || !puzzle;
+  if (els.winnerActions) els.winnerActions.hidden = !winner || solved || !puzzle;
+  if (els.timeToggle) els.timeToggle.hidden = !winner || !puzzle;
+  if (els.blueBtn) els.blueBtn.disabled = solved || !puzzle;
+  if (els.redBtn) els.redBtn.disabled = solved || !puzzle;
+  if (els.skip) els.skip.disabled = !puzzle;
+}
+
+function clearBoard() {
+  els.blueName.textContent = "Blue";
+  els.redName.textContent = "Red";
+  renderBans(els.blueBans, []);
+  renderBans(els.redBans, []);
+  if (els.bluePicks) els.bluePicks.innerHTML = "";
+  if (els.redPicks) els.redPicks.innerHTML = "";
+  if (els.fearless) {
+    els.fearless.hidden = true;
+    els.fearlessRow.innerHTML = "";
+  }
+  if (els.meta) els.meta.textContent = "";
+  if (els.time) {
+    els.time.hidden = true;
+    els.time.textContent = "";
+  }
+  if (els.grid) els.grid.innerHTML = "";
 }
 
 function nextPuzzle(countRound) {
@@ -463,10 +549,15 @@ function nextPuzzle(countRound) {
   els.title.textContent = mode === "winner" ? "Who won?" : "Who is missing?";
   els.skip.textContent = "Skip";
   setFeedback("");
+  syncUrl();
   renderModes();
+  renderFilters();
   setModeChrome();
   if (!puzzle) {
-    els.hint.textContent = "No complete drafts to guess from.";
+    clearBoard();
+    const region = league === "All" ? "these leagues" : league;
+    els.hint.textContent = "No complete drafts in " + region + " for that window.";
+    renderScore();
     return;
   }
   renderDraft();
@@ -609,6 +700,11 @@ function boot() {
     seriesGames = built.groups;
     const params = new URLSearchParams(location.search);
     if (params.get("mode") === "winner") mode = "winner";
+    if (LEAGUES.indexOf(params.get("league")) > 0) league = params.get("league");
+    if (window.RIFT_WINDOW) {
+      window.RIFT_WINDOW.init(params.get("window"));
+      windowKey = window.RIFT_WINDOW.key;
+    }
     els.skip.addEventListener("click", function () {
       nextPuzzle(!solved);
     });

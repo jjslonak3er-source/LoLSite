@@ -12,7 +12,7 @@
       href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&family=Sora:wght@600;700&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="styles.css?v=37" />
+    <link rel="stylesheet" href="styles.css?v=38" />
   </head>
   <body class="guess-page">
     <div class="vignette"></div>
@@ -50,7 +50,11 @@
       </header>
 
       <main class="guess-main">
-        <div id="guess-modes" class="chips" role="tablist" aria-label="Game mode"></div>
+        <div class="guess-tools">
+          <div id="guess-modes" class="chips" role="tablist" aria-label="Game mode"></div>
+          <div id="guess-leagues" class="chips" role="tablist" aria-label="Region"></div>
+          <div id="guess-windows" class="chips" role="tablist" aria-label="Time window"></div>
+        </div>
         <section id="guess-fearless" class="guess-fearless" hidden>
           <p class="phase-kicker">Already picked this series</p>
           <div id="guess-fearless-row" class="guess-fearless-row"></div>
@@ -115,6 +119,7 @@
     <script src="oracles.js?v=2"></script>
     <script src="player-ratings.js?v=9"></script>
     <script src="pro-games.js?v=2"></script>
-    <script src="guess.js?v=8"></script>
+    <script src="window-days.js"></script>
+    <script src="guess.js?v=9"></script>
   </body>
 </html>
