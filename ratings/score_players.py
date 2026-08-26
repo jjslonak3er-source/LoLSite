@@ -50,7 +50,7 @@ if str(ROOT) not in sys.path:
 
 from sync_oracles import newest_local_csv, resolve_csv
 
-from ratings.features import FEATURE_KEYS, ROLES, load_games, load_intl_games, load_team_regions, player_last_dates, role_feature_keys
+from ratings.features import FEATURE_KEYS, ROLES, load_games, load_intl_games, load_team_regions, player_last_dates
 from ratings.model import FORM_PRIOR, INACTIVE_GRACE_DAYS, INACTIVE_HALFLIFE, SHRINK_GAMES, rate_players
 
 
@@ -238,8 +238,6 @@ def write_site_js(payload: dict, path: Path) -> None:
             "shrink": SHRINK_GAMES,
             "halfLife": payload.get("half_life") or 40,
             "region": payload.get("region") or {},
-            "oppTalent": payload.get("opp_talent") if payload.get("opp_talent") is not None else 1.0,
-            "oppTeamTalent": payload.get("opp_team_talent") if payload.get("opp_team_talent") is not None else 1.2,
             "weights": {},
         },
     }
@@ -247,7 +245,7 @@ def write_site_js(payload: dict, path: Path) -> None:
     for role, block in (payload.get("roles") or {}).items():
         weights = block.get("weights") or {}
         compact["model"]["weights"][role] = [
-            round(float(weights.get(key) or 0.0), 4) for key in role_feature_keys(role)
+            round(float(weights.get(key) or 0.0), 4) for key in (payload.get("features") or FEATURE_KEYS)
         ]
         bucket = {}
         for row in block.get("players") or []:

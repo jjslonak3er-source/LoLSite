@@ -45,8 +45,6 @@ FEATURE_KEYS = (
     "deaths_pm",
     "dpm_vs",
 )
-# Top-only extras. Other roles still omit KDA; tops need soak and involvement.
-TOP_EXTRA_FEATURES = ("kp", "dt_share_gpm", "dt_share_kp")
 
 
 def fnum(row: dict, key: str) -> float | None:
@@ -57,12 +55,6 @@ def fnum(row: dict, key: str) -> float | None:
         return float(raw)
     except ValueError:
         return None
-
-
-def role_feature_keys(role: str) -> tuple[str, ...]:
-    if role == "top":
-        return FEATURE_KEYS + TOP_EXTRA_FEATURES
-    return FEATURE_KEYS
 
 
 def player_key(name: str) -> str:
@@ -98,8 +90,6 @@ def extract_rates(row: dict) -> dict[str, float] | None:
     dpm = fnum(row, "dpm")
     cspm = fnum(row, "cspm")
     vspm = fnum(row, "vspm")
-    dtpm = fnum(row, "damagetakenperminute")
-    gold = fnum(row, "totalgold")
     gd10 = fnum(row, "golddiffat10")
     gd15 = fnum(row, "golddiffat15")
     xd15 = fnum(row, "xpdiffat15")
@@ -117,8 +107,6 @@ def extract_rates(row: dict) -> dict[str, float] | None:
         "vspm": vspm or 0.0,
         "deaths_pm": deaths / minutes,
         "dpm_vs": 0.0,
-        "dtpm": dtpm or 0.0,
-        "gpm": (gold or 0.0) / minutes,
         "kills": kills,
         "deaths": deaths,
         "assists": assists,
@@ -441,48 +429,6 @@ def load_intl_games(csv_path: Path) -> list[dict]:
     return games
 
 
-TILT_ROLES = ("jng", "mid", "adc")
-
-
-def side_kill_participation(side_recs: dict, role: str) -> float:
-    team_kills = 0.0
-    for key in ROLES:
-        rec = side_recs.get(key) or {}
-        team_kills += float(rec.get("kills") or 0.0)
-    rec = side_recs.get(role) or {}
-    if team_kills <= 0:
-        return 0.0
-    return (float(rec.get("kills") or 0.0) + float(rec.get("assists") or 0.0)) / team_kills
-
-
-def side_dt_share(side_recs: dict, role: str) -> float:
-    total = 0.0
-    for key in ROLES:
-        rec = side_recs.get(key) or {}
-        total += float(rec.get("dtpm") or 0.0)
-    rec = side_recs.get(role) or {}
-    if total <= 0:
-        return 0.0
-    return float(rec.get("dtpm") or 0.0) / total
-
-
-def map_tilt(side_recs: dict, role: str) -> float:
-    """How much richer the rest of the map is than top. Positive = dump lane."""
-    if role != "top":
-        return 0.0
-    top = side_recs.get("top") or {}
-    top_gd = float(top.get("gd15") or 0.0)
-    vals = []
-    for key in TILT_ROLES:
-        rec = side_recs.get(key)
-        if not rec:
-            continue
-        vals.append(float(rec.get("gd15") or 0.0))
-    if not vals:
-        return 0.0
-    return sum(vals) / len(vals) - top_gd
-
-
 def observations(games: list[dict], role: str) -> list[dict]:
     rows = []
     for game in games:
@@ -496,17 +442,7 @@ def observations(games: list[dict], role: str) -> list[dict]:
             rec["split"] = game.get("split") or ""
             rec["side"] = side
             rec["opp"] = game[opp][role]["name"]
-            rec["opp_team"] = game["red_team"] if side == "blue" else game["blue_team"]
-            rec["opp_roster"] = [
-                ((game.get(opp) or {}).get(key) or {}).get("name") or ""
-                for key in ROLES
-            ]
             rec["win"] = rec["win"]
-            rec["tilt"] = map_tilt(game[side], role)
-            rec["kp"] = side_kill_participation(game[side], role)
-            dt_share = side_dt_share(game[side], role)
-            rec["dt_share_gpm"] = dt_share / max(float(rec.get("gpm") or 0.0), 1.0)
-            rec["dt_share_kp"] = dt_share / max(rec["kp"], 0.05)
-            rec["features"] = [rec[key] for key in role_feature_keys(role)]
+            rec["features"] = [rec[key] for key in FEATURE_KEYS]
             rows.append(rec)
     return rows

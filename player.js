@@ -546,7 +546,15 @@ function roleObs(games, roleIndex) {
       const cs = (x.pc && x.pc[off + roleIndex]) || 0;
       const vs = (x.pv && x.pv[off + roleIndex]) || 0;
       const deaths = (kdas[roleIndex] && kdas[roleIndex][1]) || 0;
-      const feats = [
+      out.push({
+        name: names[roleIndex] || "",
+        team: s === 0 ? game.bt : game.rt,
+        league: game.l || "",
+        champ: champs[roleIndex] || "",
+        date: game.d || "",
+        win: s === 0 ? game.w === 1 : game.w === 0,
+        tilt: mapTilt(game, side, roleIndex),
+        feats: [
           laneDiff(game, side, roleIndex, "g10"),
           laneDiff(game, side, roleIndex, "g15"),
           laneDiff(game, side, roleIndex, "x15"),
@@ -556,84 +564,11 @@ function roleObs(games, roleIndex) {
           vs / minutes,
           deaths / minutes,
           (dmg - oppDmg) / minutes,
-        ];
-      if (roleIndex === 0) {
-        let teamK = 0;
-        let teamDt = 0;
-        for (let i = 0; i < 5; i += 1) {
-          teamK += (kdas[i] && kdas[i][0]) || 0;
-          teamDt += (x.pt && x.pt[off + i]) || 0;
-        }
-        const k = (kdas[roleIndex] && kdas[roleIndex][0]) || 0;
-        const a = (kdas[roleIndex] && kdas[roleIndex][2]) || 0;
-        const kp = teamK ? (k + a) / teamK : 0;
-        const dtShare = teamDt ? ((x.pt && x.pt[off + roleIndex]) || 0) / teamDt : 0;
-        const gpm = ((x.pg && x.pg[off + roleIndex]) || 0) / minutes;
-        feats.push(kp, dtShare / Math.max(gpm, 1), dtShare / Math.max(kp, 0.05));
-      }
-      out.push({
-        name: names[roleIndex] || "",
-        team: s === 0 ? game.bt : game.rt,
-        league: game.l || "",
-        champ: champs[roleIndex] || "",
-        date: game.d || "",
-        win: s === 0 ? game.w === 1 : game.w === 0,
-        tilt: mapTilt(game, side, roleIndex),
-        opp: (s === 0 ? game.rp : game.bp)[roleIndex] || "",
-        oppRoster: (s === 0 ? game.rp : game.bp) || [],
-        feats: feats,
+        ],
       });
     }
   }
   return out;
-}
-
-function predForms(rowLists) {
-  const sums = {};
-  const counts = {};
-  for (let r = 0; r < rowLists.length; r += 1) {
-    const rows = rowLists[r] || [];
-    for (let i = 0; i < rows.length; i += 1) {
-      const name = rows[i].name;
-      if (!name) continue;
-      sums[name] = (sums[name] || 0) + (rows[i].pred || 0);
-      counts[name] = (counts[name] || 0) + 1;
-    }
-  }
-  const forms = {};
-  const names = Object.keys(sums);
-  for (let i = 0; i < names.length; i += 1) {
-    forms[names[i]] = sums[names[i]] / counts[names[i]];
-  }
-  return forms;
-}
-
-function applyOppTalent(rows, forms, laneScale, teamScale) {
-  if (!forms || (!laneScale && !teamScale)) return rows;
-  const names = Object.keys(forms);
-  if (!names.length) return rows;
-  let mean = 0;
-  for (let i = 0; i < names.length; i += 1) mean += forms[names[i]];
-  mean /= names.length;
-  for (let i = 0; i < rows.length; i += 1) {
-    const row = rows[i];
-    const opp = row.opp;
-    if (laneScale && opp && forms[opp] != null) {
-      row.pred += laneScale * (forms[opp] - mean);
-    }
-    if (!teamScale) continue;
-    const roster = row.oppRoster || [];
-    let rest = 0;
-    let n = 0;
-    for (let j = 0; j < roster.length; j += 1) {
-      const name = roster[j];
-      if (!name || name === opp || forms[name] == null) continue;
-      rest += forms[name];
-      n += 1;
-    }
-    if (n) row.pred += teamScale * (rest / n - mean);
-  }
-  return rows;
 }
 
 function zAgainst(values, anchorNames) {
@@ -674,37 +609,21 @@ function liveBoard() {
   }
   const roles = {};
   const champPools = {};
-  const predRows = [];
-  const laneScale = model.oppTalent == null ? 1.0 : model.oppTalent;
-  const teamScale = model.oppTeamTalent == null ? 1.2 : model.oppTeamTalent;
   for (let r = 0; r < ROLE_KEYS.length; r += 1) {
     const roleKey = ROLE_KEYS[r];
     const weights = (model.weights && model.weights[roleKey]) || [];
     const rows = roleObs(games, r);
     if (roleKey === "top") residualizeTopFeats(rows);
     const z = zByGroup(rows, function (row) { return row.league; }, function (row) { return row.feats; });
-    for (let i = 0; i < rows.length; i += 1) {
-      let pred = 0;
-      const zi = z[i] || [];
-      for (let j = 0; j < weights.length; j += 1) pred += (zi[j] || 0) * (weights[j] || 0);
-      rows[i].pred = pred;
-    }
-    predRows[r] = rows;
-  }
-  const sosForms = predForms(predRows);
-  for (let r = 0; r < ROLE_KEYS.length; r += 1) {
-    applyOppTalent(predRows[r], sosForms, laneScale, teamScale);
-  }
-  for (let r = 0; r < ROLE_KEYS.length; r += 1) {
-    const roleKey = ROLE_KEYS[r];
-    const rows = predRows[r];
     const byName = {};
     const byChamp = {};
     for (let i = 0; i < rows.length; i += 1) {
       const row = rows[i];
       const name = (row.name || "").trim();
       if (!name) continue;
-      const pred = row.pred || 0;
+      let pred = 0;
+      const zi = z[i] || [];
+      for (let j = 0; j < weights.length; j += 1) pred += (zi[j] || 0) * (weights[j] || 0);
       const w = obsWeight(row.date, latest, halfLife);
       const rec = byName[name] || (byName[name] = {
         n: name,
@@ -898,7 +817,7 @@ function liveBoard() {
       }),
     };
   }
-  liveMemo = { key: key, roles: roles, champs: champs, predRows: predRows };
+  liveMemo = { key: key, roles: roles, champs: champs };
   return liveMemo;
 }
 
@@ -2190,7 +2109,10 @@ function formTrueScore(form, peers, formW, ctx, mastery, teamAvg, roleKey) {
 function trueScoreSeries(name, roleKey, teamName) {
   const roleIndex = ROLE_KEYS.indexOf((roleKey || "").toLowerCase());
   if (roleIndex < 0) return [];
-  const blend = (ratingsModel().blend) || {};
+  const games = filteredGames();
+  const model = ratingsModel();
+  const blend = model.blend || {};
+  const weights = (model.weights && model.weights[roleKey]) || [];
   const prior = model.prior || 28;
   const shrink = model.shrink || 24;
   const halfLife = model.halfLife || 40;
@@ -2200,8 +2122,23 @@ function trueScoreSeries(name, roleKey, teamName) {
   const frozen = (window.RIFT_PLAYER_RATINGS && window.RIFT_PLAYER_RATINGS.roles) || {};
   const teamAvgs = teamAvgMap();
   const peers = formPeerStats(roleKey);
-  const board = liveBoard();
-  const rows = (board.predRows && board.predRows[roleIndex]) || [];
+  let rows = roleObs(games, roleIndex);
+  if (roleKey === "top") residualizeTopFeats(rows);
+  const z = zByGroup(
+    rows,
+    function (row) {
+      return row.league;
+    },
+    function (row) {
+      return row.feats;
+    }
+  );
+  for (let i = 0; i < rows.length; i += 1) {
+    let pred = 0;
+    const zi = z[i] || [];
+    for (let j = 0; j < weights.length; j += 1) pred += (zi[j] || 0) * (weights[j] || 0);
+    rows[i].pred = pred;
+  }
   const bags = {};
   for (let i = 0; i < rows.length; i += 1) {
     const row = rows[i];

@@ -6,7 +6,7 @@ from collections import defaultdict
 
 from datetime import datetime
 
-from .features import FEATURE_KEYS, ROLES, describe_tiers, observations, role_feature_keys, team_league_map
+from .features import FEATURE_KEYS, ROLES, describe_tiers, observations, team_league_map
 from .mathutil import mean_std, ridge, zscore_columns, zeros
 
 # Quality: how a player's in-game profile maps onto winning vs their region.
@@ -50,105 +50,6 @@ LEAGUES = ("LCK", "LPL", "LEC", "LCS")
 WORLD_LEAGUES = LEAGUES + ("LCP", "CBLOL", "VCS", "PCS")
 
 
-# Ridge on lane stats + KP only. Soak stays in the feature vector but is
-# applied after, so it cannot invert carry vs tank. Heavy floors had put
-# Xiaoxu/HOYA over Bin; these are a light push toward vision, soak, and KP.
-TOP_RIDGE_FEATURES = FEATURE_KEYS + ("kp",)
-TOP_KP_FLOOR = 0.18
-TOP_VSPM_NUDGE = 0.01
-TOP_SOAK_WEIGHT = 0.01
-
-# After a first form pass, credit games vs stronger opponents. Lane SOS
-# is the 1v1; team SOS is the other four on that roster (so a last-place
-# Ascend slate vs BLG/JDG/TES is not treated like a loss to a weak club).
-# Both are centered, so an average matchup is a no-op.
-OPP_TALENT = 1.0
-OPP_TEAM_TALENT = 1.2
-
-
-def boost_top_form(fitted: dict) -> dict:
-    full_keys = role_feature_keys("top")
-    fitted_keys = list(fitted.get("keys") or FEATURE_KEYS)
-    by_name = {fitted_keys[i]: fitted["coef"][i] for i in range(len(fitted["coef"]))}
-    coef = [float(by_name.get(key, 0.0)) for key in full_keys]
-    idxs = {key: i for i, key in enumerate(full_keys)}
-    if "vspm" in idxs:
-        coef[idxs["vspm"]] += TOP_VSPM_NUDGE
-    if "kp" in idxs:
-        coef[idxs["kp"]] = max(coef[idxs["kp"]], TOP_KP_FLOOR)
-    if "dt_share_gpm" in idxs:
-        coef[idxs["dt_share_gpm"]] = TOP_SOAK_WEIGHT
-    if "dt_share_kp" in idxs:
-        coef[idxs["dt_share_kp"]] = TOP_SOAK_WEIGHT
-    fitted["coef"] = coef
-    fitted["keys"] = full_keys
-    fitted["weights"] = {full_keys[i]: coef[i] for i in range(len(full_keys))}
-    z = fitted["z"]
-    fitted["pred"] = [
-        sum((zrow[j] if j < len(zrow) else 0.0) * coef[j] for j in range(len(coef)))
-        for zrow in z
-    ]
-    return fitted
-
-
-def apply_opp_talent(
-    rows: list[dict],
-    fitted: dict,
-    quality: dict[str, dict],
-    forms: dict[str, float] | None = None,
-    lane_scale: float = OPP_TALENT,
-    team_scale: float = OPP_TEAM_TALENT,
-) -> dict:
-    """Shift each game's quality pred by opponent talent.
-
-    Lane term uses the same-role opponent. Team term uses the other four
-    on that roster so a stacked map is credited even when the lane matchup
-    is ordinary. Forms are centered; missing names are treated as average.
-    """
-    forms = forms or {name: rec["form"] for name, rec in quality.items()}
-    if not forms:
-        return fitted
-    mean = sum(forms.values()) / len(forms)
-    preds = list(fitted["pred"])
-    for i, row in enumerate(rows):
-        opp = row.get("opp") or ""
-        opp_form = forms.get(opp)
-        if opp_form is not None and lane_scale:
-            preds[i] += lane_scale * (opp_form - mean)
-        rest = []
-        for name in row.get("opp_roster") or []:
-            if not name or name == opp:
-                continue
-            val = forms.get(name)
-            if val is not None:
-                rest.append(val)
-        if rest and team_scale:
-            preds[i] += team_scale * (sum(rest) / len(rest) - mean)
-    fitted["pred"] = preds
-    return fitted
-
-
-def fit_role_quality(rows: list[dict], role: str) -> dict:
-    if role == "top":
-        fitted = fit_quality(rows, TOP_RIDGE_FEATURES)
-        boost_top_form(fitted)
-        return fitted
-    return fit_quality(rows, role_feature_keys(role) if role else FEATURE_KEYS)
-
-
-def collect_player_forms(role_quality: dict[str, dict[str, dict]]) -> dict[str, float]:
-    """One form per player. Dual-role names keep the role with more games."""
-    forms: dict[str, float] = {}
-    games: dict[str, int] = {}
-    for quality in role_quality.values():
-        for name, rec in quality.items():
-            n = int(rec.get("games") or 0)
-            if n >= games.get(name, -1):
-                forms[name] = rec["form"]
-                games[name] = n
-    return forms
-
-
 def zscore_within_league(rows: list[dict]) -> list[list[float]]:
     groups: dict[str, list[int]] = defaultdict(list)
     for i, row in enumerate(rows):
@@ -165,11 +66,10 @@ def zscore_within_league(rows: list[dict]) -> list[list[float]]:
     return z
 
 
-def fit_quality(rows: list[dict], keys: tuple[str, ...] | None = None) -> dict:
-    keys = keys or FEATURE_KEYS
+def fit_quality(rows: list[dict]) -> dict:
     zx = zscore_within_league(rows)
     ys = [float(row["win"]) for row in rows]
-    p = len(keys)
+    p = len(FEATURE_KEYS)
     xtx = zeros(p, p)
     xty = [0.0] * p
     for i, zrow in enumerate(zx):
@@ -186,10 +86,9 @@ def fit_quality(rows: list[dict], keys: tuple[str, ...] | None = None) -> dict:
         preds.append(sum(zrow[j] * coef[j] for j in range(p)))
     return {
         "coef": coef,
-        "keys": keys,
         "z": zx,
         "pred": preds,
-        "weights": {keys[i]: coef[i] for i in range(p)},
+        "weights": {FEATURE_KEYS[i]: coef[i] for i in range(p)},
     }
 
 
@@ -225,8 +124,6 @@ def quality_scores(
         dt = _parse_date(row.get("date") or "")
         if dt and (latest is None or dt > latest):
             latest = dt
-    p = len(fitted["coef"])
-    keys = fitted.get("keys") or FEATURE_KEYS
     by_player: dict[str, dict] = {}
     for i, row in enumerate(rows):
         name = row["name"]
@@ -248,7 +145,7 @@ def quality_scores(
                 "last_date": "",
                 "tier_weight": 0.0,
                 "tier_score": 0.0,
-                "z_sum": [0.0] * p,
+                "z_sum": [0.0] * len(FEATURE_KEYS),
             }
             by_player[name] = rec
         tier = row.get("tier") or "open"
@@ -297,7 +194,7 @@ def quality_scores(
             "last_date": rec["last_date"],
             "tier": rec["tier_score"] / rec["tier_weight"] if rec["tier_weight"] else 0.0,
             "qualities": {
-                keys[j]: rec["z_sum"][j] / w for j in range(p)
+                FEATURE_KEYS[j]: rec["z_sum"][j] / w for j in range(len(FEATURE_KEYS))
             },
         }
     return out
@@ -674,17 +571,10 @@ def blend_role(
     last_dates: dict[str, str] | None = None,
     latest: datetime | None = None,
     low_teams: set[str] | None = None,
-    role: str = "",
-    player_forms: dict[str, float] | None = None,
-    fitted: dict | None = None,
-    quality: dict[str, dict] | None = None,
 ) -> dict:
     if len(rows) < 40:
         return {"weights": {}, "players": [], "champions": {}}
-    if fitted is None:
-        fitted = fit_role_quality(rows, role)
-        quality = quality_scores(rows, fitted, half_life=half_life)
-    apply_opp_talent(rows, fitted, quality or {}, forms=player_forms)
+    fitted = fit_quality(rows)
     quality = quality_scores(rows, fitted, half_life=half_life)
     eligible = {
         name: rec
@@ -820,23 +710,10 @@ def rate_players(
             if dt and (latest is None or dt > latest):
                 latest = dt
     low_teams = low_division_teams(games)
-    prepared: dict[str, tuple] = {}
-    first_quality: dict[str, dict[str, dict]] = {}
-    for role in ROLES:
-        rows = observations(games, role)
-        if len(rows) < 40:
-            prepared[role] = (rows, None, None)
-            continue
-        fitted = fit_role_quality(rows, role)
-        quality = quality_scores(rows, fitted, half_life=half_life)
-        prepared[role] = (rows, fitted, quality)
-        first_quality[role] = quality
-    player_forms = collect_player_forms(first_quality)
     roles = {}
     for role in ROLES:
-        rows, fitted, quality = prepared[role]
         roles[role] = blend_role(
-            rows,
+            observations(games, role),
             impact,
             min_games,
             region,
@@ -844,10 +721,6 @@ def rate_players(
             last_dates=last_dates,
             latest=latest,
             low_teams=low_teams,
-            role=role,
-            player_forms=player_forms,
-            fitted=fitted,
-            quality=quality,
         )
     return {
         "min_games": min_games,
@@ -867,7 +740,5 @@ def rate_players(
         "intl_matchups": fitted_region.get("matchups") or [],
         "intl_teams": fitted_region.get("teams") or {},
         "features": list(FEATURE_KEYS),
-        "opp_talent": OPP_TALENT,
-        "opp_team_talent": OPP_TEAM_TALENT,
         "roles": roles,
     }
