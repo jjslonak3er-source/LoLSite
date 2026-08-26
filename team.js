@@ -417,20 +417,8 @@ function rosterRows(rec) {
       share: recent.n ? (share ? share.n / recent.n : 0) : 0,
       score: ratingScore(player.name, role),
       rel: ratingRel(player.name, role),
+      vs: ratingVsTeam(player.name, role, rec.name),
     });
-  }
-  let teamAvg = 0;
-  let teamN = 0;
-  for (let i = 0; i < out.length; i += 1) {
-    const base = ratingBlend(out[i].score, out[i].rel);
-    out[i].vsBase = base;
-    if (base == null) continue;
-    teamAvg += base;
-    teamN += 1;
-  }
-  teamAvg = teamN ? teamAvg / teamN : null;
-  for (let i = 0; i < out.length; i += 1) {
-    out[i].vs = vsTeamScore(out[i].vsBase, teamAvg);
   }
   if (rosterSort === "role") {
     out.sort(function (a, b) {
