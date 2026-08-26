@@ -349,9 +349,14 @@ function ratingVsBase(name, roleKey) {
   return ratingBlend(ratingScore(name, roleKey), ratingRel(name, roleKey));
 }
 
+// Strip most of the club's W-L from True score. λ=1 centers every roster
+// at 0; λ=0 is raw Score. 0.7 keeps a little context without treating a
+// last-place slate like a talent verdict.
+const TRUE_TEAM_SHARE = 0.7;
+
 function vsTeamScore(score, teamAvg) {
   if (score == null || !isFinite(score) || teamAvg == null || !isFinite(teamAvg)) return null;
-  return Math.round((score + (score - teamAvg)) * 100) / 100;
+  return Math.round((score - TRUE_TEAM_SHARE * teamAvg) * 100) / 100;
 }
 
 let teamAvgMemo = { key: "", map: {} };
