@@ -349,10 +349,9 @@ function ratingVsBase(name, roleKey) {
   return ratingBlend(ratingScore(name, roleKey), ratingRel(name, roleKey));
 }
 
-function vsTeamScore(score, teamAvg, roleKey) {
+function vsTeamScore(score, teamAvg) {
   if (score == null || !isFinite(score) || teamAvg == null || !isFinite(teamAvg)) return null;
-  const gap = String(roleKey || "").toLowerCase() === "top" ? TOP_VS_TEAM : 1;
-  return Math.round((score + gap * (score - teamAvg)) * 100) / 100;
+  return Math.round((score + (score - teamAvg)) * 100) / 100;
 }
 
 let teamAvgMemo = { key: "", map: {} };
@@ -403,7 +402,7 @@ function teamAvgMap() {
 }
 
 function ratingVsTeam(name, roleKey, teamName) {
-  return vsTeamScore(ratingVsBase(name, roleKey), teamAvgMap()[teamName], roleKey);
+  return vsTeamScore(ratingVsBase(name, roleKey), teamAvgMap()[teamName]);
 }
 
 function liveFiltersOn() {
@@ -480,10 +479,9 @@ function laneDiff(game, side, index, key) {
   return side === "b" ? v : -v;
 }
 
-const TOP_TILT_FEATS = [0, 1, 2, 3, 4, 5, 7, 8, 9, 10];
-const TOP_DEATHS_TILT_SCALE = 2.25;
+const TOP_TILT_FEATS = [0, 1, 2, 3, 4, 7, 8];
+const TOP_DEATHS_TILT_SCALE = 1.75;
 const TOP_DEATHS_FEAT = 7;
-const TOP_VS_TEAM = 0.4;
 
 function mapTilt(game, side, roleIndex) {
   if (roleIndex !== 0) return 0;
@@ -522,7 +520,6 @@ function residualizeTopFeats(rows) {
       const slope = (col === TOP_DEATHS_FEAT ? TOP_DEATHS_TILT_SCALE : 1) * cov / tVar;
       const intercept = yMean - slope * tMean;
       for (let k = 0; k < idxs.length; k += 1) {
-        if ((tilts[k] || 0) <= 0) continue;
         rows[idxs[k]].feats[col] = ys[k] - (intercept + slope * tilts[k]);
       }
     }
@@ -549,8 +546,6 @@ function roleObs(games, roleIndex) {
       const cs = (x.pc && x.pc[off + roleIndex]) || 0;
       const vs = (x.pv && x.pv[off + roleIndex]) || 0;
       const deaths = (kdas[roleIndex] && kdas[roleIndex][1]) || 0;
-      const gold = (x.pg && x.pg[off + roleIndex]) || 0;
-      const dtpm = (x.pt && x.pt[off + roleIndex]) || 0;
       const feats = [
           laneDiff(game, side, roleIndex, "g10"),
           laneDiff(game, side, roleIndex, "g15"),
@@ -563,7 +558,11 @@ function roleObs(games, roleIndex) {
           (dmg - oppDmg) / minutes,
         ];
       if (roleIndex === 0) {
-        feats.push(dtpm, gold / Math.max(deaths, 1));
+        let teamK = 0;
+        for (let i = 0; i < 5; i += 1) teamK += (kdas[i] && kdas[i][0]) || 0;
+        const k = (kdas[roleIndex] && kdas[roleIndex][0]) || 0;
+        const a = (kdas[roleIndex] && kdas[roleIndex][2]) || 0;
+        feats.push(teamK ? (k + a) / teamK : 0);
       }
       out.push({
         name: names[roleIndex] || "",
@@ -2110,7 +2109,7 @@ function formTrueScore(form, peers, formW, ctx, mastery, teamAvg, roleKey) {
   if (form == null || !isFinite(form)) return null;
   const formZ = (form - peers[0]) / peers[1];
   const score = (formW * formZ + ctx) * 10;
-  const vs = vsTeamScore(ratingBlend(score, mastery), teamAvg, roleKey);
+  const vs = vsTeamScore(ratingBlend(score, mastery), teamAvg);
   if (vs != null) return vs;
   return ratingBlend(score, mastery);
 }

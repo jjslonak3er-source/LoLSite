@@ -430,7 +430,7 @@ function rosterRows(rec) {
   }
   teamAvg = teamN ? teamAvg / teamN : null;
   for (let i = 0; i < out.length; i += 1) {
-    out[i].vs = vsTeamScore(out[i].vsBase, teamAvg, out[i].role);
+    out[i].vs = vsTeamScore(out[i].vsBase, teamAvg);
   }
   if (rosterSort === "role") {
     out.sort(function (a, b) {

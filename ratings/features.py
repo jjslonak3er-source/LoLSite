@@ -45,7 +45,9 @@ FEATURE_KEYS = (
     "deaths_pm",
     "dpm_vs",
 )
-TOP_EXTRA_FEATURES = ("dtpm", "gold_per_death")
+# Top-only: (kills + assists) / team kills. Other roles still omit KDA
+# because it mostly restates the result; tops need involvement vs islanding.
+TOP_EXTRA_FEATURES = ("kp",)
 
 
 def fnum(row: dict, key: str) -> float | None:
@@ -97,8 +99,6 @@ def extract_rates(row: dict) -> dict[str, float] | None:
     dpm = fnum(row, "dpm")
     cspm = fnum(row, "cspm")
     vspm = fnum(row, "vspm")
-    dtpm = fnum(row, "damagetakenperminute")
-    gold = fnum(row, "totalgold")
     gd10 = fnum(row, "golddiffat10")
     gd15 = fnum(row, "golddiffat15")
     xd15 = fnum(row, "xpdiffat15")
@@ -116,8 +116,6 @@ def extract_rates(row: dict) -> dict[str, float] | None:
         "vspm": vspm or 0.0,
         "deaths_pm": deaths / minutes,
         "dpm_vs": 0.0,
-        "dtpm": dtpm or 0.0,
-        "gold_per_death": (gold or 0.0) / max(deaths, 1.0),
         "kills": kills,
         "deaths": deaths,
         "assists": assists,
@@ -443,6 +441,17 @@ def load_intl_games(csv_path: Path) -> list[dict]:
 TILT_ROLES = ("jng", "mid", "adc")
 
 
+def side_kill_participation(side_recs: dict, role: str) -> float:
+    team_kills = 0.0
+    for key in ROLES:
+        rec = side_recs.get(key) or {}
+        team_kills += float(rec.get("kills") or 0.0)
+    rec = side_recs.get(role) or {}
+    if team_kills <= 0:
+        return 0.0
+    return (float(rec.get("kills") or 0.0) + float(rec.get("assists") or 0.0)) / team_kills
+
+
 def map_tilt(side_recs: dict, role: str) -> float:
     """How much richer the rest of the map is than top. Positive = dump lane."""
     if role != "top":
@@ -475,6 +484,7 @@ def observations(games: list[dict], role: str) -> list[dict]:
             rec["opp"] = game[opp][role]["name"]
             rec["win"] = rec["win"]
             rec["tilt"] = map_tilt(game[side], role)
+            rec["kp"] = side_kill_participation(game[side], role)
             rec["features"] = [rec[key] for key in role_feature_keys(role)]
             rows.append(rec)
     return rows

@@ -50,69 +50,25 @@ LEAGUES = ("LCK", "LPL", "LEC", "LCS")
 WORLD_LEAGUES = LEAGUES + ("LCP", "CBLOL", "VCS", "PCS")
 
 
-# Top form residualizes these against map tilt so dump-lane games are
-# not scored as failed carry games. cspm/vspm: vspm stays raw; cspm is
-# stripped on dump-lane games only. Soak stats (dtpm, gold/death) too.
-TOP_TILT_FEATURES = (
-    "gd10",
-    "gd15",
-    "xd15",
-    "cd15",
-    "dpm",
-    "cspm",
-    "deaths_pm",
-    "dpm_vs",
-    "dtpm",
-    "gold_per_death",
-)
-# Dump-lane tops die more by job. Scale the deaths~tilt slope so that
-# expected extra deaths are removed more aggressively than other stats.
-TOP_DEATHS_TILT_SCALE = 2.25
+# Ridge often buries kill participation under leftover lane stats. After
+# fitting top, lift KP so involvement actually moves Score. Floor keeps it
+# among the largest qualities even if the raw coef is tiny.
+TOP_KP_BOOST = 2.5
+TOP_KP_MIN = 0.20
 
 
-def _league_tier_key(row: dict) -> str:
-    league = row.get("league") or ""
-    tier = row.get("tier") or "open"
-    return f"{league}|{tier}" if tier in ("high", "low") else league
-
-
-def residualize_top_features(rows: list[dict]) -> list[dict]:
-    """Replace lane-sensitive top stats with residuals vs map tilt.
-
-    Only dump-lane games (tilt > 0: rest of map richer than top) are
-    stripped. Strong-side tops keep raw lane stats.
-    """
-    if not rows:
-        return rows
-    keys = role_feature_keys("top")
-    idxs = {key: i for i, key in enumerate(keys)}
-    cols = [idxs[key] for key in TOP_TILT_FEATURES if key in idxs]
-    groups: dict[str, list[int]] = defaultdict(list)
-    for i, row in enumerate(rows):
-        groups[_league_tier_key(row)].append(i)
-    for members in groups.values():
-        if len(members) < 8:
-            continue
-        tilts = [float(rows[i].get("tilt") or 0.0) for i in members]
-        t_mean = sum(tilts) / len(tilts)
-        t_var = sum((value - t_mean) ** 2 for value in tilts) / len(tilts)
-        if t_var < 1e-6:
-            continue
-        residuals = {i: list(rows[i]["features"]) for i in members}
-        for col in cols:
-            ys = [float(rows[i]["features"][col]) for i in members]
-            y_mean = sum(ys) / len(ys)
-            cov = sum((tilts[k] - t_mean) * (ys[k] - y_mean) for k in range(len(members))) / len(members)
-            slope = cov / t_var
-            if keys[col] == "deaths_pm":
-                slope *= TOP_DEATHS_TILT_SCALE
-            intercept = y_mean - slope * t_mean
-            for k, i in enumerate(members):
-                if tilts[k] > 0:
-                    residuals[i][col] = ys[k] - (intercept + slope * tilts[k])
-        for i in members:
-            rows[i]["features"] = residuals[i]
-    return rows
+def boost_top_kp(fitted: dict) -> dict:
+    keys = fitted.get("keys") or FEATURE_KEYS
+    if "kp" not in keys:
+        return fitted
+    idx = keys.index("kp")
+    coef = list(fitted["coef"])
+    coef[idx] = max(coef[idx] * TOP_KP_BOOST, TOP_KP_MIN)
+    fitted["coef"] = coef
+    fitted["weights"] = {keys[i]: coef[i] for i in range(len(keys))}
+    p = len(coef)
+    fitted["pred"] = [sum(zrow[j] * coef[j] for j in range(p)) for zrow in fitted["z"]]
+    return fitted
 
 
 def zscore_within_league(rows: list[dict]) -> list[list[float]]:
@@ -644,9 +600,9 @@ def blend_role(
 ) -> dict:
     if len(rows) < 40:
         return {"weights": {}, "players": [], "champions": {}}
-    if role == "top":
-        residualize_top_features(rows)
     fitted = fit_quality(rows, role_feature_keys(role) if role else FEATURE_KEYS)
+    if role == "top":
+        boost_top_kp(fitted)
     quality = quality_scores(rows, fitted, half_life=half_life)
     eligible = {
         name: rec
