@@ -58,6 +58,11 @@ TOP_KP_FLOOR = 0.18
 TOP_VSPM_NUDGE = 0.01
 TOP_SOAK_WEIGHT = 0.01
 
+# After a first form pass, credit games vs stronger same-role opponents
+# and debit games vs weaker ones. Getting smashed by Bin hurts less than
+# the same smash from a bottom-lane top.
+OPP_TALENT = 0.5
+
 
 def boost_top_form(fitted: dict) -> dict:
     full_keys = role_feature_keys("top")
@@ -81,6 +86,26 @@ def boost_top_form(fitted: dict) -> dict:
         sum((zrow[j] if j < len(zrow) else 0.0) * coef[j] for j in range(len(coef)))
         for zrow in z
     ]
+    return fitted
+
+
+def apply_opp_talent(rows: list[dict], fitted: dict, quality: dict[str, dict], scale: float = OPP_TALENT) -> dict:
+    """Shift each game's quality pred by how good the lane opponent is.
+
+    Opponent form is centered so an average matchup is a no-op. Missing
+    opponents (too few games) are treated as average.
+    """
+    forms = {name: rec["form"] for name, rec in quality.items()}
+    if not forms:
+        return fitted
+    mean = sum(forms.values()) / len(forms)
+    preds = list(fitted["pred"])
+    for i, row in enumerate(rows):
+        opp_form = forms.get(row.get("opp") or "")
+        if opp_form is None:
+            continue
+        preds[i] += scale * (opp_form - mean)
+    fitted["pred"] = preds
     return fitted
 
 
@@ -619,6 +644,8 @@ def blend_role(
     else:
         fitted = fit_quality(rows, role_feature_keys(role) if role else FEATURE_KEYS)
     quality = quality_scores(rows, fitted, half_life=half_life)
+    apply_opp_talent(rows, fitted, quality)
+    quality = quality_scores(rows, fitted, half_life=half_life)
     eligible = {
         name: rec
         for name, rec in quality.items()
@@ -784,5 +811,6 @@ def rate_players(
         "intl_matchups": fitted_region.get("matchups") or [],
         "intl_teams": fitted_region.get("teams") or {},
         "features": list(FEATURE_KEYS),
+        "opp_talent": OPP_TALENT,
         "roles": roles,
     }

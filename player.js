@@ -579,11 +579,39 @@ function roleObs(games, roleIndex) {
         date: game.d || "",
         win: s === 0 ? game.w === 1 : game.w === 0,
         tilt: mapTilt(game, side, roleIndex),
+        opp: (s === 0 ? game.rp : game.bp)[roleIndex] || "",
         feats: feats,
       });
     }
   }
   return out;
+}
+
+function applyOppTalent(rows, scale) {
+  if (!scale) return rows;
+  const sums = {};
+  const counts = {};
+  for (let i = 0; i < rows.length; i += 1) {
+    const name = rows[i].name;
+    if (!name) continue;
+    sums[name] = (sums[name] || 0) + (rows[i].pred || 0);
+    counts[name] = (counts[name] || 0) + 1;
+  }
+  const names = Object.keys(sums);
+  if (!names.length) return rows;
+  const forms = {};
+  let mean = 0;
+  for (let i = 0; i < names.length; i += 1) {
+    forms[names[i]] = sums[names[i]] / counts[names[i]];
+    mean += forms[names[i]];
+  }
+  mean /= names.length;
+  for (let i = 0; i < rows.length; i += 1) {
+    const opp = rows[i].opp;
+    if (!opp || forms[opp] == null) continue;
+    rows[i].pred += scale * (forms[opp] - mean);
+  }
+  return rows;
 }
 
 function zAgainst(values, anchorNames) {
@@ -630,15 +658,20 @@ function liveBoard() {
     const rows = roleObs(games, r);
     if (roleKey === "top") residualizeTopFeats(rows);
     const z = zByGroup(rows, function (row) { return row.league; }, function (row) { return row.feats; });
+    for (let i = 0; i < rows.length; i += 1) {
+      let pred = 0;
+      const zi = z[i] || [];
+      for (let j = 0; j < weights.length; j += 1) pred += (zi[j] || 0) * (weights[j] || 0);
+      rows[i].pred = pred;
+    }
+    applyOppTalent(rows, model.oppTalent == null ? 0.5 : model.oppTalent);
     const byName = {};
     const byChamp = {};
     for (let i = 0; i < rows.length; i += 1) {
       const row = rows[i];
       const name = (row.name || "").trim();
       if (!name) continue;
-      let pred = 0;
-      const zi = z[i] || [];
-      for (let j = 0; j < weights.length; j += 1) pred += (zi[j] || 0) * (weights[j] || 0);
+      const pred = row.pred || 0;
       const w = obsWeight(row.date, latest, halfLife);
       const rec = byName[name] || (byName[name] = {
         n: name,
@@ -2148,14 +2181,19 @@ function trueScoreSeries(name, roleKey, teamName) {
       return row.feats;
     }
   );
+  for (let i = 0; i < rows.length; i += 1) {
+    let pred = 0;
+    const zi = z[i] || [];
+    for (let j = 0; j < weights.length; j += 1) pred += (zi[j] || 0) * (weights[j] || 0);
+    rows[i].pred = pred;
+  }
+  applyOppTalent(rows, model.oppTalent == null ? 0.5 : model.oppTalent);
   const bags = {};
   for (let i = 0; i < rows.length; i += 1) {
     const row = rows[i];
     const key = playerKey(row.name);
     if (!key) continue;
-    let pred = 0;
-    const zi = z[i] || [];
-    for (let j = 0; j < weights.length; j += 1) pred += (zi[j] || 0) * (weights[j] || 0);
+    const pred = row.pred || 0;
     const rec = bags[key] || (bags[key] = {
       name: row.name,
       key: key,

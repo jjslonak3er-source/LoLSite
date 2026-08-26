@@ -238,6 +238,7 @@ def write_site_js(payload: dict, path: Path) -> None:
             "shrink": SHRINK_GAMES,
             "halfLife": payload.get("half_life") or 40,
             "region": payload.get("region") or {},
+            "oppTalent": payload.get("opp_talent") if payload.get("opp_talent") is not None else 0.5,
             "weights": {},
         },
     }
