@@ -2055,6 +2055,14 @@ select:hover,
   font-size: 12px;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
+  margin-left: auto;
+}
+
+.player-score-chart-avg {
+  font-size: 11px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
 }
 
 .player-score-chart svg {

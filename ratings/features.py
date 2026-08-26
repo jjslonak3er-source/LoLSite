@@ -45,6 +45,7 @@ FEATURE_KEYS = (
     "deaths_pm",
     "dpm_vs",
 )
+TOP_EXTRA_FEATURES = ("dtpm", "gold_per_death")
 
 
 def fnum(row: dict, key: str) -> float | None:
@@ -55,6 +56,12 @@ def fnum(row: dict, key: str) -> float | None:
         return float(raw)
     except ValueError:
         return None
+
+
+def role_feature_keys(role: str) -> tuple[str, ...]:
+    if role == "top":
+        return FEATURE_KEYS + TOP_EXTRA_FEATURES
+    return FEATURE_KEYS
 
 
 def player_key(name: str) -> str:
@@ -90,6 +97,8 @@ def extract_rates(row: dict) -> dict[str, float] | None:
     dpm = fnum(row, "dpm")
     cspm = fnum(row, "cspm")
     vspm = fnum(row, "vspm")
+    dtpm = fnum(row, "damagetakenperminute")
+    gold = fnum(row, "totalgold")
     gd10 = fnum(row, "golddiffat10")
     gd15 = fnum(row, "golddiffat15")
     xd15 = fnum(row, "xpdiffat15")
@@ -107,6 +116,8 @@ def extract_rates(row: dict) -> dict[str, float] | None:
         "vspm": vspm or 0.0,
         "deaths_pm": deaths / minutes,
         "dpm_vs": 0.0,
+        "dtpm": dtpm or 0.0,
+        "gold_per_death": (gold or 0.0) / max(deaths, 1.0),
         "kills": kills,
         "deaths": deaths,
         "assists": assists,
@@ -429,6 +440,26 @@ def load_intl_games(csv_path: Path) -> list[dict]:
     return games
 
 
+TILT_ROLES = ("jng", "mid", "adc")
+
+
+def map_tilt(side_recs: dict, role: str) -> float:
+    """How much richer the rest of the map is than top. Positive = dump lane."""
+    if role != "top":
+        return 0.0
+    top = side_recs.get("top") or {}
+    top_gd = float(top.get("gd15") or 0.0)
+    vals = []
+    for key in TILT_ROLES:
+        rec = side_recs.get(key)
+        if not rec:
+            continue
+        vals.append(float(rec.get("gd15") or 0.0))
+    if not vals:
+        return 0.0
+    return sum(vals) / len(vals) - top_gd
+
+
 def observations(games: list[dict], role: str) -> list[dict]:
     rows = []
     for game in games:
@@ -443,6 +474,7 @@ def observations(games: list[dict], role: str) -> list[dict]:
             rec["side"] = side
             rec["opp"] = game[opp][role]["name"]
             rec["win"] = rec["win"]
-            rec["features"] = [rec[key] for key in FEATURE_KEYS]
+            rec["tilt"] = map_tilt(game[side], role)
+            rec["features"] = [rec[key] for key in role_feature_keys(role)]
             rows.append(rec)
     return rows

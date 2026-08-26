@@ -6,7 +6,7 @@ from collections import defaultdict
 
 from datetime import datetime
 
-from .features import FEATURE_KEYS, ROLES, describe_tiers, observations, team_league_map
+from .features import FEATURE_KEYS, ROLES, describe_tiers, observations, role_feature_keys, team_league_map
 from .mathutil import mean_std, ridge, zscore_columns, zeros
 
 # Quality: how a player's in-game profile maps onto winning vs their region.
@@ -50,6 +50,71 @@ LEAGUES = ("LCK", "LPL", "LEC", "LCS")
 WORLD_LEAGUES = LEAGUES + ("LCP", "CBLOL", "VCS", "PCS")
 
 
+# Top form residualizes these against map tilt so dump-lane games are
+# not scored as failed carry games. cspm/vspm: vspm stays raw; cspm is
+# stripped on dump-lane games only. Soak stats (dtpm, gold/death) too.
+TOP_TILT_FEATURES = (
+    "gd10",
+    "gd15",
+    "xd15",
+    "cd15",
+    "dpm",
+    "cspm",
+    "deaths_pm",
+    "dpm_vs",
+    "dtpm",
+    "gold_per_death",
+)
+# Dump-lane tops die more by job. Scale the deaths~tilt slope so that
+# expected extra deaths are removed more aggressively than other stats.
+TOP_DEATHS_TILT_SCALE = 2.25
+
+
+def _league_tier_key(row: dict) -> str:
+    league = row.get("league") or ""
+    tier = row.get("tier") or "open"
+    return f"{league}|{tier}" if tier in ("high", "low") else league
+
+
+def residualize_top_features(rows: list[dict]) -> list[dict]:
+    """Replace lane-sensitive top stats with residuals vs map tilt.
+
+    Only dump-lane games (tilt > 0: rest of map richer than top) are
+    stripped. Strong-side tops keep raw lane stats.
+    """
+    if not rows:
+        return rows
+    keys = role_feature_keys("top")
+    idxs = {key: i for i, key in enumerate(keys)}
+    cols = [idxs[key] for key in TOP_TILT_FEATURES if key in idxs]
+    groups: dict[str, list[int]] = defaultdict(list)
+    for i, row in enumerate(rows):
+        groups[_league_tier_key(row)].append(i)
+    for members in groups.values():
+        if len(members) < 8:
+            continue
+        tilts = [float(rows[i].get("tilt") or 0.0) for i in members]
+        t_mean = sum(tilts) / len(tilts)
+        t_var = sum((value - t_mean) ** 2 for value in tilts) / len(tilts)
+        if t_var < 1e-6:
+            continue
+        residuals = {i: list(rows[i]["features"]) for i in members}
+        for col in cols:
+            ys = [float(rows[i]["features"][col]) for i in members]
+            y_mean = sum(ys) / len(ys)
+            cov = sum((tilts[k] - t_mean) * (ys[k] - y_mean) for k in range(len(members))) / len(members)
+            slope = cov / t_var
+            if keys[col] == "deaths_pm":
+                slope *= TOP_DEATHS_TILT_SCALE
+            intercept = y_mean - slope * t_mean
+            for k, i in enumerate(members):
+                if tilts[k] > 0:
+                    residuals[i][col] = ys[k] - (intercept + slope * tilts[k])
+        for i in members:
+            rows[i]["features"] = residuals[i]
+    return rows
+
+
 def zscore_within_league(rows: list[dict]) -> list[list[float]]:
     groups: dict[str, list[int]] = defaultdict(list)
     for i, row in enumerate(rows):
@@ -66,10 +131,11 @@ def zscore_within_league(rows: list[dict]) -> list[list[float]]:
     return z
 
 
-def fit_quality(rows: list[dict]) -> dict:
+def fit_quality(rows: list[dict], keys: tuple[str, ...] | None = None) -> dict:
+    keys = keys or FEATURE_KEYS
     zx = zscore_within_league(rows)
     ys = [float(row["win"]) for row in rows]
-    p = len(FEATURE_KEYS)
+    p = len(keys)
     xtx = zeros(p, p)
     xty = [0.0] * p
     for i, zrow in enumerate(zx):
@@ -86,9 +152,10 @@ def fit_quality(rows: list[dict]) -> dict:
         preds.append(sum(zrow[j] * coef[j] for j in range(p)))
     return {
         "coef": coef,
+        "keys": keys,
         "z": zx,
         "pred": preds,
-        "weights": {FEATURE_KEYS[i]: coef[i] for i in range(p)},
+        "weights": {keys[i]: coef[i] for i in range(p)},
     }
 
 
@@ -124,6 +191,8 @@ def quality_scores(
         dt = _parse_date(row.get("date") or "")
         if dt and (latest is None or dt > latest):
             latest = dt
+    p = len(fitted["coef"])
+    keys = fitted.get("keys") or FEATURE_KEYS
     by_player: dict[str, dict] = {}
     for i, row in enumerate(rows):
         name = row["name"]
@@ -145,7 +214,7 @@ def quality_scores(
                 "last_date": "",
                 "tier_weight": 0.0,
                 "tier_score": 0.0,
-                "z_sum": [0.0] * len(FEATURE_KEYS),
+                "z_sum": [0.0] * p,
             }
             by_player[name] = rec
         tier = row.get("tier") or "open"
@@ -194,7 +263,7 @@ def quality_scores(
             "last_date": rec["last_date"],
             "tier": rec["tier_score"] / rec["tier_weight"] if rec["tier_weight"] else 0.0,
             "qualities": {
-                FEATURE_KEYS[j]: rec["z_sum"][j] / w for j in range(len(FEATURE_KEYS))
+                keys[j]: rec["z_sum"][j] / w for j in range(p)
             },
         }
     return out
@@ -571,10 +640,13 @@ def blend_role(
     last_dates: dict[str, str] | None = None,
     latest: datetime | None = None,
     low_teams: set[str] | None = None,
+    role: str = "",
 ) -> dict:
     if len(rows) < 40:
         return {"weights": {}, "players": [], "champions": {}}
-    fitted = fit_quality(rows)
+    if role == "top":
+        residualize_top_features(rows)
+    fitted = fit_quality(rows, role_feature_keys(role) if role else FEATURE_KEYS)
     quality = quality_scores(rows, fitted, half_life=half_life)
     eligible = {
         name: rec
@@ -721,6 +793,7 @@ def rate_players(
             last_dates=last_dates,
             latest=latest,
             low_teams=low_teams,
+            role=role,
         )
     return {
         "min_games": min_games,

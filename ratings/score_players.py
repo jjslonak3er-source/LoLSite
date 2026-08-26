@@ -50,7 +50,7 @@ if str(ROOT) not in sys.path:
 
 from sync_oracles import newest_local_csv, resolve_csv
 
-from ratings.features import FEATURE_KEYS, ROLES, load_games, load_intl_games, load_team_regions, player_last_dates
+from ratings.features import FEATURE_KEYS, ROLES, load_games, load_intl_games, load_team_regions, player_last_dates, role_feature_keys
 from ratings.model import FORM_PRIOR, INACTIVE_GRACE_DAYS, INACTIVE_HALFLIFE, SHRINK_GAMES, rate_players
 
 
@@ -245,7 +245,7 @@ def write_site_js(payload: dict, path: Path) -> None:
     for role, block in (payload.get("roles") or {}).items():
         weights = block.get("weights") or {}
         compact["model"]["weights"][role] = [
-            round(float(weights.get(key) or 0.0), 4) for key in (payload.get("features") or FEATURE_KEYS)
+            round(float(weights.get(key) or 0.0), 4) for key in role_feature_keys(role)
         ]
         bucket = {}
         for row in block.get("players") or []:

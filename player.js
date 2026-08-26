@@ -349,9 +349,10 @@ function ratingVsBase(name, roleKey) {
   return ratingBlend(ratingScore(name, roleKey), ratingRel(name, roleKey));
 }
 
-function vsTeamScore(score, teamAvg) {
+function vsTeamScore(score, teamAvg, roleKey) {
   if (score == null || !isFinite(score) || teamAvg == null || !isFinite(teamAvg)) return null;
-  return Math.round((score + (score - teamAvg)) * 100) / 100;
+  const gap = String(roleKey || "").toLowerCase() === "top" ? TOP_VS_TEAM : 1;
+  return Math.round((score + gap * (score - teamAvg)) * 100) / 100;
 }
 
 let teamAvgMemo = { key: "", map: {} };
@@ -402,7 +403,7 @@ function teamAvgMap() {
 }
 
 function ratingVsTeam(name, roleKey, teamName) {
-  return vsTeamScore(ratingVsBase(name, roleKey), teamAvgMap()[teamName]);
+  return vsTeamScore(ratingVsBase(name, roleKey), teamAvgMap()[teamName], roleKey);
 }
 
 function liveFiltersOn() {
@@ -479,9 +480,10 @@ function laneDiff(game, side, index, key) {
   return side === "b" ? v : -v;
 }
 
-const TOP_TILT_FEATS = [0, 1, 2, 3, 4, 7, 8];
-const TOP_DEATHS_TILT_SCALE = 1.75;
+const TOP_TILT_FEATS = [0, 1, 2, 3, 4, 5, 7, 8, 9, 10];
+const TOP_DEATHS_TILT_SCALE = 2.25;
 const TOP_DEATHS_FEAT = 7;
+const TOP_VS_TEAM = 0.4;
 
 function mapTilt(game, side, roleIndex) {
   if (roleIndex !== 0) return 0;
@@ -520,6 +522,7 @@ function residualizeTopFeats(rows) {
       const slope = (col === TOP_DEATHS_FEAT ? TOP_DEATHS_TILT_SCALE : 1) * cov / tVar;
       const intercept = yMean - slope * tMean;
       for (let k = 0; k < idxs.length; k += 1) {
+        if ((tilts[k] || 0) <= 0) continue;
         rows[idxs[k]].feats[col] = ys[k] - (intercept + slope * tilts[k]);
       }
     }
@@ -546,15 +549,9 @@ function roleObs(games, roleIndex) {
       const cs = (x.pc && x.pc[off + roleIndex]) || 0;
       const vs = (x.pv && x.pv[off + roleIndex]) || 0;
       const deaths = (kdas[roleIndex] && kdas[roleIndex][1]) || 0;
-      out.push({
-        name: names[roleIndex] || "",
-        team: s === 0 ? game.bt : game.rt,
-        league: game.l || "",
-        champ: champs[roleIndex] || "",
-        date: game.d || "",
-        win: s === 0 ? game.w === 1 : game.w === 0,
-        tilt: mapTilt(game, side, roleIndex),
-        feats: [
+      const gold = (x.pg && x.pg[off + roleIndex]) || 0;
+      const dtpm = (x.pt && x.pt[off + roleIndex]) || 0;
+      const feats = [
           laneDiff(game, side, roleIndex, "g10"),
           laneDiff(game, side, roleIndex, "g15"),
           laneDiff(game, side, roleIndex, "x15"),
@@ -564,7 +561,19 @@ function roleObs(games, roleIndex) {
           vs / minutes,
           deaths / minutes,
           (dmg - oppDmg) / minutes,
-        ],
+        ];
+      if (roleIndex === 0) {
+        feats.push(dtpm, gold / Math.max(deaths, 1));
+      }
+      out.push({
+        name: names[roleIndex] || "",
+        team: s === 0 ? game.bt : game.rt,
+        league: game.l || "",
+        champ: champs[roleIndex] || "",
+        date: game.d || "",
+        win: s === 0 ? game.w === 1 : game.w === 0,
+        tilt: mapTilt(game, side, roleIndex),
+        feats: feats,
       });
     }
   }
@@ -2080,6 +2089,32 @@ function formPeerStats(roleKey) {
   return meanStd(anchor.length >= 2 ? anchor : all);
 }
 
+function rollingForm(games, latest, prior, shrink, season, halfLife) {
+  let wSum = 0;
+  let predSum = 0;
+  let g = 0;
+  for (let i = 0; i < games.length; i += 1) {
+    if (games[i].date > latest) break;
+    const w = obsWeight(games[i].date, latest, halfLife);
+    wSum += w;
+    predSum += w * games[i].pred;
+    g += 1;
+  }
+  if (!g) return null;
+  const hot = wSum ? predSum / wSum : 0;
+  const mixed = (wSum * hot + prior * season) / (wSum + prior);
+  return (g / (g + shrink)) * mixed;
+}
+
+function formTrueScore(form, peers, formW, ctx, mastery, teamAvg, roleKey) {
+  if (form == null || !isFinite(form)) return null;
+  const formZ = (form - peers[0]) / peers[1];
+  const score = (formW * formZ + ctx) * 10;
+  const vs = vsTeamScore(ratingBlend(score, mastery), teamAvg, roleKey);
+  if (vs != null) return vs;
+  return ratingBlend(score, mastery);
+}
+
 function trueScoreSeries(name, roleKey, teamName) {
   const roleIndex = ROLE_KEYS.indexOf((roleKey || "").toLowerCase());
   if (roleIndex < 0) return [];
@@ -2094,10 +2129,7 @@ function trueScoreSeries(name, roleKey, teamName) {
   const regionBlend = blend.region == null ? 0.18 : blend.region;
   const region = model.region || {};
   const frozen = (window.RIFT_PLAYER_RATINGS && window.RIFT_PLAYER_RATINGS.roles) || {};
-  const frozenRec = frozen[roleKey] && frozen[roleKey][playerKey(name)];
-  const season = frozenRec && frozenRec.sf != null ? frozenRec.sf : 0;
-  const mastery = ratingRel(name, roleKey);
-  const teamAvg = teamAvgMap()[teamName];
+  const teamAvgs = teamAvgMap();
   const peers = formPeerStats(roleKey);
   let rows = roleObs(games, roleIndex);
   if (roleKey === "top") residualizeTopFeats(rows);
@@ -2110,43 +2142,64 @@ function trueScoreSeries(name, roleKey, teamName) {
       return row.feats;
     }
   );
-  const want = playerKey(name);
-  const pts = [];
+  const bags = {};
   for (let i = 0; i < rows.length; i += 1) {
     const row = rows[i];
-    if (playerKey(row.name) !== want) continue;
+    const key = playerKey(row.name);
+    if (!key) continue;
     let pred = 0;
     const zi = z[i] || [];
     for (let j = 0; j < weights.length; j += 1) pred += (zi[j] || 0) * (weights[j] || 0);
-    pts.push({ date: row.date || "", pred: pred, league: row.league || "" });
+    const rec = bags[key] || (bags[key] = {
+      name: row.name,
+      key: key,
+      games: [],
+      teams: {},
+      leagues: {},
+    });
+    rec.games.push({ date: row.date || "", pred: pred });
+    if (row.team) rec.teams[row.team] = (rec.teams[row.team] || 0) + 1;
+    if (row.league) rec.leagues[row.league] = (rec.leagues[row.league] || 0) + 1;
   }
-  pts.sort(function (a, b) {
-    if (a.date < b.date) return -1;
-    if (a.date > b.date) return 1;
-    return 0;
-  });
+  const bagKeys = Object.keys(bags);
+  for (let i = 0; i < bagKeys.length; i += 1) {
+    const rec = bags[bagKeys[i]];
+    rec.games.sort(function (a, b) {
+      if (a.date < b.date) return -1;
+      if (a.date > b.date) return 1;
+      return 0;
+    });
+    rec.team = mostCommon(rec.teams);
+    rec.league = mostCommon(rec.leagues);
+    rec.mastery = ratingRel(rec.name, roleKey);
+    const frozenRec = frozen[roleKey] && frozen[roleKey][rec.key];
+    rec.season = frozenRec && frozenRec.sf != null ? frozenRec.sf : 0;
+    rec.ctx = frozenRec && frozenRec.c != null ? frozenRec.c : regionBlend * (region[rec.league] || 0);
+    rec.teamAvg = teamAvgs[rec.team];
+  }
+  const want = playerKey(name);
+  const mine = bags[want];
+  if (!mine || mine.games.length < 2) return [];
+  if (teamName && teamAvgs[teamName] != null) mine.teamAvg = teamAvgs[teamName];
   const out = [];
-  for (let t = 0; t < pts.length; t += 1) {
-    const latest = pts[t].date;
-    let wSum = 0;
-    let predSum = 0;
-    for (let i = 0; i <= t; i += 1) {
-      const w = obsWeight(pts[i].date, latest, halfLife);
-      wSum += w;
-      predSum += w * pts[i].pred;
+  for (let t = 0; t < mine.games.length; t += 1) {
+    const latest = mine.games[t].date;
+    const form = rollingForm(mine.games, latest, prior, shrink, mine.season, halfLife);
+    const v = formTrueScore(form, peers, formW, mine.ctx, mine.mastery, mine.teamAvg, roleKey);
+    let roleSum = 0;
+    let roleN = 0;
+    for (let i = 0; i < bagKeys.length; i += 1) {
+      const rec = bags[bagKeys[i]];
+      const other = rollingForm(rec.games, latest, prior, shrink, rec.season, halfLife);
+      const score = formTrueScore(other, peers, formW, rec.ctx, rec.mastery, rec.teamAvg, roleKey);
+      if (score == null || !isFinite(score)) continue;
+      roleSum += score;
+      roleN += 1;
     }
-    const hot = wSum ? predSum / wSum : 0;
-    const mixed = (wSum * hot + prior * season) / (wSum + prior);
-    const form = ((t + 1) / (t + 1 + shrink)) * mixed;
-    const formZ = (form - peers[0]) / peers[1];
-    const ctx =
-      frozenRec && frozenRec.c != null
-        ? frozenRec.c
-        : regionBlend * (region[pts[t].league] || 0);
-    const score = (formW * formZ + ctx) * 10;
     out.push({
-      date: pts[t].date,
-      v: vsTeamScore(ratingBlend(score, mastery), teamAvg),
+      date: latest,
+      v: v,
+      role: roleN ? roleSum / roleN : null,
     });
   }
   return out;
@@ -2159,9 +2212,10 @@ function svgEl(name, attrs) {
   return node;
 }
 
-function trueScoreChart(points) {
+function trueScoreChart(points, roleKey) {
   const wrap = document.createElement("div");
   wrap.className = "player-score-chart";
+  const roleLabel = (roleKey || "").toUpperCase() || "ROLE";
   const head = document.createElement("div");
   head.className = "player-score-chart-head";
   const lbl = document.createElement("span");
@@ -2169,7 +2223,9 @@ function trueScoreChart(points) {
   lbl.textContent = "True score";
   const val = document.createElement("span");
   val.className = "player-score-chart-val";
-  head.append(lbl, val);
+  const avgVal = document.createElement("span");
+  avgVal.className = "player-score-chart-avg";
+  head.append(lbl, val, avgVal);
   wrap.append(head);
   const usable = [];
   for (let i = 0; i < (points || []).length; i += 1) {
@@ -2190,6 +2246,10 @@ function trueScoreChart(points) {
   for (let i = 0; i < usable.length; i += 1) {
     if (usable[i].v < min) min = usable[i].v;
     if (usable[i].v > max) max = usable[i].v;
+    if (usable[i].role != null && isFinite(usable[i].role)) {
+      if (usable[i].role < min) min = usable[i].role;
+      if (usable[i].role > max) max = usable[i].role;
+    }
   }
   if (max - min < 1) {
     min -= 1;
@@ -2206,34 +2266,33 @@ function trueScoreChart(points) {
   function yOf(v) {
     return pad.t + (1 - (v - min) / (max - min)) * ih;
   }
-  const zeroY = min < 0 && max > 0 ? yOf(0) : null;
-  let line = "";
-  for (let i = 0; i < usable.length; i += 1) {
-    line += (i ? " L " : "M ") + xOf(i).toFixed(1) + " " + yOf(usable[i].v).toFixed(1);
+  function linePath(key) {
+    let d = "";
+    for (let i = 0; i < usable.length; i += 1) {
+      const n = usable[i][key];
+      if (n == null || !isFinite(n)) continue;
+      d += (d ? " L " : "M ") + xOf(i).toFixed(1) + " " + yOf(n).toFixed(1);
+    }
+    return d;
   }
-  const area =
-    line +
-    " L " +
-    xOf(usable.length - 1).toFixed(1) +
-    " " +
-    (zeroY == null ? yOf(min < 0 ? max : min) : zeroY).toFixed(1) +
-    " L " +
-    xOf(0).toFixed(1) +
-    " " +
-    (zeroY == null ? yOf(min < 0 ? max : min) : zeroY).toFixed(1) +
-    " Z";
+  const zeroY = min < 0 && max > 0 ? yOf(0) : null;
+  const line = linePath("v");
+  const roleLine = linePath("role");
   const last = usable[usable.length - 1];
-  const tone = scoreTone(last.v);
-  val.className = "player-score-chart-val " + (tone === "wr-up" ? "wr-up" : tone === "wr-down" ? "wr-down" : "");
-  val.textContent = fmtScore(last.v);
+  function paintVal(hit) {
+    val.textContent = fmtScore(hit.v);
+    val.className =
+      "player-score-chart-val " + (hit.v > 0 ? "wr-up" : hit.v < 0 ? "wr-down" : "");
+    if (hit.role != null && isFinite(hit.role)) {
+      avgVal.textContent = roleLabel + " " + fmtScore(hit.role);
+      avgVal.hidden = false;
+    } else {
+      avgVal.textContent = "";
+      avgVal.hidden = true;
+    }
+  }
+  paintVal(last);
   const svg = svgEl("svg", { viewBox: "0 0 " + w + " " + h, preserveAspectRatio: "none" });
-  svg.append(
-    svgEl("path", {
-      d: area,
-      fill: last.v >= 0 ? "rgba(125, 255, 179, 0.12)" : "rgba(255, 139, 154, 0.12)",
-      stroke: "none",
-    })
-  );
   if (zeroY != null) {
     svg.append(
       svgEl("line", {
@@ -2244,6 +2303,19 @@ function trueScoreChart(points) {
         stroke: "rgba(197, 208, 216, 0.22)",
         "stroke-width": "1",
         "stroke-dasharray": "3 3",
+      })
+    );
+  }
+  if (roleLine) {
+    svg.append(
+      svgEl("path", {
+        d: roleLine,
+        fill: "none",
+        stroke: "rgba(197, 208, 216, 0.72)",
+        "stroke-width": "1.4",
+        "stroke-dasharray": "4 3",
+        "stroke-linejoin": "round",
+        "stroke-linecap": "round",
       })
     );
   }
@@ -2273,7 +2345,7 @@ function trueScoreChart(points) {
   lastDate.textContent = (last.date || "").slice(5);
   axis.append(firstDate, lastDate);
   wrap.append(axis);
-  wrap.title = "True score after each game in this filter";
+  wrap.title = "Player vs " + roleLabel + " average in this filter";
   svg.addEventListener("mousemove", function (event) {
     const rect = svg.getBoundingClientRect();
     if (!rect.width) return;
@@ -2281,20 +2353,20 @@ function trueScoreChart(points) {
     const i = Math.round(t * (usable.length - 1));
     const hit = usable[i];
     if (!hit) return;
-    val.textContent = fmtScore(hit.v);
-    val.className =
-      "player-score-chart-val " + (hit.v > 0 ? "wr-up" : hit.v < 0 ? "wr-down" : "");
+    paintVal(hit);
     mark.setAttribute("cx", xOf(i).toFixed(1));
     mark.setAttribute("cy", yOf(hit.v).toFixed(1));
-    wrap.title = (hit.date || "") + " · " + fmtScore(hit.v);
+    wrap.title =
+      (hit.date || "") +
+      " · " +
+      fmtScore(hit.v) +
+      (hit.role != null && isFinite(hit.role) ? " · " + roleLabel + " " + fmtScore(hit.role) : "");
   });
   svg.addEventListener("mouseleave", function () {
-    val.textContent = fmtScore(last.v);
-    val.className =
-      "player-score-chart-val " + (last.v > 0 ? "wr-up" : last.v < 0 ? "wr-down" : "");
+    paintVal(last);
     mark.setAttribute("cx", xOf(usable.length - 1).toFixed(1));
     mark.setAttribute("cy", yOf(last.v).toFixed(1));
-    wrap.title = "True score after each game in this filter";
+    wrap.title = "Player vs " + roleLabel + " average in this filter";
   });
   return wrap;
 }
@@ -2339,7 +2411,7 @@ function renderSummary(stats) {
   tiles.append(tile("DPM", fmtK(stats.avgDpm)));
   tiles.append(tile("GD@15", fmtDiff(stats.avgGd15), stats.avgGd15 > 0 ? "up" : stats.avgGd15 < 0 ? "down" : ""));
   els.summary.append(tiles);
-  els.summary.append(trueScoreChart(trueScoreSeries(stats.name, roleKey, stats.team)));
+  els.summary.append(trueScoreChart(trueScoreSeries(stats.name, roleKey, stats.team), roleKey));
 }
 
 function renderPool(rows) {
