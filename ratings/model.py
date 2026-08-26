@@ -50,40 +50,37 @@ LEAGUES = ("LCK", "LPL", "LEC", "LCS")
 WORLD_LEAGUES = LEAGUES + ("LCP", "CBLOL", "VCS", "PCS")
 
 
-# After fitting top, lift these so they actually move Score. Ridge buries
-# vision, soak, and KP under leftover lane stats. Floors are in the same
-# units as the learned coefs (z -> win).
-TOP_WEIGHT_FLOOR = {
-    "vspm": 0.14,
-    "kp": 0.32,
-    "dt_share_gpm": 0.16,
-    "dt_share_kp": 0.16,
-}
-TOP_WEIGHT_BOOST = {
-    "vspm": 3.0,
-    "kp": 4.0,
-    "dt_share_gpm": 2.5,
-    "dt_share_kp": 2.5,
-}
+# Ridge on lane stats + KP only. Soak stays in the feature vector but is
+# applied after, so it cannot invert carry vs tank. Heavy floors had put
+# Xiaoxu/HOYA over Bin; these are a light push toward vision, soak, and KP.
+TOP_RIDGE_FEATURES = FEATURE_KEYS + ("kp",)
+TOP_KP_FLOOR = 0.18
+TOP_VSPM_NUDGE = 0.01
+TOP_SOAK_WEIGHT = 0.01
 
 
 def boost_top_form(fitted: dict) -> dict:
-    keys = fitted.get("keys") or FEATURE_KEYS
-    coef = list(fitted["coef"])
-    changed = False
-    for name, floor in TOP_WEIGHT_FLOOR.items():
-        if name not in keys:
-            continue
-        idx = keys.index(name)
-        boost = TOP_WEIGHT_BOOST.get(name, 1.0)
-        coef[idx] = max(coef[idx] * boost, floor)
-        changed = True
-    if not changed:
-        return fitted
+    full_keys = role_feature_keys("top")
+    fitted_keys = list(fitted.get("keys") or FEATURE_KEYS)
+    by_name = {fitted_keys[i]: fitted["coef"][i] for i in range(len(fitted["coef"]))}
+    coef = [float(by_name.get(key, 0.0)) for key in full_keys]
+    idxs = {key: i for i, key in enumerate(full_keys)}
+    if "vspm" in idxs:
+        coef[idxs["vspm"]] += TOP_VSPM_NUDGE
+    if "kp" in idxs:
+        coef[idxs["kp"]] = max(coef[idxs["kp"]], TOP_KP_FLOOR)
+    if "dt_share_gpm" in idxs:
+        coef[idxs["dt_share_gpm"]] = TOP_SOAK_WEIGHT
+    if "dt_share_kp" in idxs:
+        coef[idxs["dt_share_kp"]] = TOP_SOAK_WEIGHT
     fitted["coef"] = coef
-    fitted["weights"] = {keys[i]: coef[i] for i in range(len(keys))}
-    p = len(coef)
-    fitted["pred"] = [sum(zrow[j] * coef[j] for j in range(p)) for zrow in fitted["z"]]
+    fitted["keys"] = full_keys
+    fitted["weights"] = {full_keys[i]: coef[i] for i in range(len(full_keys))}
+    z = fitted["z"]
+    fitted["pred"] = [
+        sum((zrow[j] if j < len(zrow) else 0.0) * coef[j] for j in range(len(coef)))
+        for zrow in z
+    ]
     return fitted
 
 
@@ -616,9 +613,11 @@ def blend_role(
 ) -> dict:
     if len(rows) < 40:
         return {"weights": {}, "players": [], "champions": {}}
-    fitted = fit_quality(rows, role_feature_keys(role) if role else FEATURE_KEYS)
     if role == "top":
+        fitted = fit_quality(rows, TOP_RIDGE_FEATURES)
         boost_top_form(fitted)
+    else:
+        fitted = fit_quality(rows, role_feature_keys(role) if role else FEATURE_KEYS)
     quality = quality_scores(rows, fitted, half_life=half_life)
     eligible = {
         name: rec
