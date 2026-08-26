@@ -496,6 +496,11 @@ def observations(games: list[dict], role: str) -> list[dict]:
             rec["split"] = game.get("split") or ""
             rec["side"] = side
             rec["opp"] = game[opp][role]["name"]
+            rec["opp_team"] = game["red_team"] if side == "blue" else game["blue_team"]
+            rec["opp_roster"] = [
+                ((game.get(opp) or {}).get(key) or {}).get("name") or ""
+                for key in ROLES
+            ]
             rec["win"] = rec["win"]
             rec["tilt"] = map_tilt(game[side], role)
             rec["kp"] = side_kill_participation(game[side], role)

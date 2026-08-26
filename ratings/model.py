@@ -58,10 +58,12 @@ TOP_KP_FLOOR = 0.18
 TOP_VSPM_NUDGE = 0.01
 TOP_SOAK_WEIGHT = 0.01
 
-# After a first form pass, credit games vs stronger same-role opponents
-# and debit games vs weaker ones. Getting smashed by Bin hurts less than
-# the same smash from a bottom-lane top.
-OPP_TALENT = 0.5
+# After a first form pass, credit games vs stronger opponents. Lane SOS
+# is the 1v1; team SOS is the other four on that roster (so a last-place
+# Ascend slate vs BLG/JDG/TES is not treated like a loss to a weak club).
+# Both are centered, so an average matchup is a no-op.
+OPP_TALENT = 1.0
+OPP_TEAM_TALENT = 1.2
 
 
 def boost_top_form(fitted: dict) -> dict:
@@ -89,24 +91,62 @@ def boost_top_form(fitted: dict) -> dict:
     return fitted
 
 
-def apply_opp_talent(rows: list[dict], fitted: dict, quality: dict[str, dict], scale: float = OPP_TALENT) -> dict:
-    """Shift each game's quality pred by how good the lane opponent is.
+def apply_opp_talent(
+    rows: list[dict],
+    fitted: dict,
+    quality: dict[str, dict],
+    forms: dict[str, float] | None = None,
+    lane_scale: float = OPP_TALENT,
+    team_scale: float = OPP_TEAM_TALENT,
+) -> dict:
+    """Shift each game's quality pred by opponent talent.
 
-    Opponent form is centered so an average matchup is a no-op. Missing
-    opponents (too few games) are treated as average.
+    Lane term uses the same-role opponent. Team term uses the other four
+    on that roster so a stacked map is credited even when the lane matchup
+    is ordinary. Forms are centered; missing names are treated as average.
     """
-    forms = {name: rec["form"] for name, rec in quality.items()}
+    forms = forms or {name: rec["form"] for name, rec in quality.items()}
     if not forms:
         return fitted
     mean = sum(forms.values()) / len(forms)
     preds = list(fitted["pred"])
     for i, row in enumerate(rows):
-        opp_form = forms.get(row.get("opp") or "")
-        if opp_form is None:
-            continue
-        preds[i] += scale * (opp_form - mean)
+        opp = row.get("opp") or ""
+        opp_form = forms.get(opp)
+        if opp_form is not None and lane_scale:
+            preds[i] += lane_scale * (opp_form - mean)
+        rest = []
+        for name in row.get("opp_roster") or []:
+            if not name or name == opp:
+                continue
+            val = forms.get(name)
+            if val is not None:
+                rest.append(val)
+        if rest and team_scale:
+            preds[i] += team_scale * (sum(rest) / len(rest) - mean)
     fitted["pred"] = preds
     return fitted
+
+
+def fit_role_quality(rows: list[dict], role: str) -> dict:
+    if role == "top":
+        fitted = fit_quality(rows, TOP_RIDGE_FEATURES)
+        boost_top_form(fitted)
+        return fitted
+    return fit_quality(rows, role_feature_keys(role) if role else FEATURE_KEYS)
+
+
+def collect_player_forms(role_quality: dict[str, dict[str, dict]]) -> dict[str, float]:
+    """One form per player. Dual-role names keep the role with more games."""
+    forms: dict[str, float] = {}
+    games: dict[str, int] = {}
+    for quality in role_quality.values():
+        for name, rec in quality.items():
+            n = int(rec.get("games") or 0)
+            if n >= games.get(name, -1):
+                forms[name] = rec["form"]
+                games[name] = n
+    return forms
 
 
 def zscore_within_league(rows: list[dict]) -> list[list[float]]:
@@ -635,16 +675,16 @@ def blend_role(
     latest: datetime | None = None,
     low_teams: set[str] | None = None,
     role: str = "",
+    player_forms: dict[str, float] | None = None,
+    fitted: dict | None = None,
+    quality: dict[str, dict] | None = None,
 ) -> dict:
     if len(rows) < 40:
         return {"weights": {}, "players": [], "champions": {}}
-    if role == "top":
-        fitted = fit_quality(rows, TOP_RIDGE_FEATURES)
-        boost_top_form(fitted)
-    else:
-        fitted = fit_quality(rows, role_feature_keys(role) if role else FEATURE_KEYS)
-    quality = quality_scores(rows, fitted, half_life=half_life)
-    apply_opp_talent(rows, fitted, quality)
+    if fitted is None:
+        fitted = fit_role_quality(rows, role)
+        quality = quality_scores(rows, fitted, half_life=half_life)
+    apply_opp_talent(rows, fitted, quality or {}, forms=player_forms)
     quality = quality_scores(rows, fitted, half_life=half_life)
     eligible = {
         name: rec
@@ -780,10 +820,23 @@ def rate_players(
             if dt and (latest is None or dt > latest):
                 latest = dt
     low_teams = low_division_teams(games)
+    prepared: dict[str, tuple] = {}
+    first_quality: dict[str, dict[str, dict]] = {}
+    for role in ROLES:
+        rows = observations(games, role)
+        if len(rows) < 40:
+            prepared[role] = (rows, None, None)
+            continue
+        fitted = fit_role_quality(rows, role)
+        quality = quality_scores(rows, fitted, half_life=half_life)
+        prepared[role] = (rows, fitted, quality)
+        first_quality[role] = quality
+    player_forms = collect_player_forms(first_quality)
     roles = {}
     for role in ROLES:
+        rows, fitted, quality = prepared[role]
         roles[role] = blend_role(
-            observations(games, role),
+            rows,
             impact,
             min_games,
             region,
@@ -792,6 +845,9 @@ def rate_players(
             latest=latest,
             low_teams=low_teams,
             role=role,
+            player_forms=player_forms,
+            fitted=fitted,
+            quality=quality,
         )
     return {
         "min_games": min_games,
@@ -812,5 +868,6 @@ def rate_players(
         "intl_teams": fitted_region.get("teams") or {},
         "features": list(FEATURE_KEYS),
         "opp_talent": OPP_TALENT,
+        "opp_team_talent": OPP_TEAM_TALENT,
         "roles": roles,
     }

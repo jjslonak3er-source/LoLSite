@@ -580,6 +580,7 @@ function roleObs(games, roleIndex) {
         win: s === 0 ? game.w === 1 : game.w === 0,
         tilt: mapTilt(game, side, roleIndex),
         opp: (s === 0 ? game.rp : game.bp)[roleIndex] || "",
+        oppRoster: (s === 0 ? game.rp : game.bp) || [],
         feats: feats,
       });
     }
@@ -587,29 +588,50 @@ function roleObs(games, roleIndex) {
   return out;
 }
 
-function applyOppTalent(rows, scale) {
-  if (!scale) return rows;
+function predForms(rowLists) {
   const sums = {};
   const counts = {};
-  for (let i = 0; i < rows.length; i += 1) {
-    const name = rows[i].name;
-    if (!name) continue;
-    sums[name] = (sums[name] || 0) + (rows[i].pred || 0);
-    counts[name] = (counts[name] || 0) + 1;
+  for (let r = 0; r < rowLists.length; r += 1) {
+    const rows = rowLists[r] || [];
+    for (let i = 0; i < rows.length; i += 1) {
+      const name = rows[i].name;
+      if (!name) continue;
+      sums[name] = (sums[name] || 0) + (rows[i].pred || 0);
+      counts[name] = (counts[name] || 0) + 1;
+    }
   }
-  const names = Object.keys(sums);
-  if (!names.length) return rows;
   const forms = {};
-  let mean = 0;
+  const names = Object.keys(sums);
   for (let i = 0; i < names.length; i += 1) {
     forms[names[i]] = sums[names[i]] / counts[names[i]];
-    mean += forms[names[i]];
   }
+  return forms;
+}
+
+function applyOppTalent(rows, forms, laneScale, teamScale) {
+  if (!forms || (!laneScale && !teamScale)) return rows;
+  const names = Object.keys(forms);
+  if (!names.length) return rows;
+  let mean = 0;
+  for (let i = 0; i < names.length; i += 1) mean += forms[names[i]];
   mean /= names.length;
   for (let i = 0; i < rows.length; i += 1) {
-    const opp = rows[i].opp;
-    if (!opp || forms[opp] == null) continue;
-    rows[i].pred += scale * (forms[opp] - mean);
+    const row = rows[i];
+    const opp = row.opp;
+    if (laneScale && opp && forms[opp] != null) {
+      row.pred += laneScale * (forms[opp] - mean);
+    }
+    if (!teamScale) continue;
+    const roster = row.oppRoster || [];
+    let rest = 0;
+    let n = 0;
+    for (let j = 0; j < roster.length; j += 1) {
+      const name = roster[j];
+      if (!name || name === opp || forms[name] == null) continue;
+      rest += forms[name];
+      n += 1;
+    }
+    if (n) row.pred += teamScale * (rest / n - mean);
   }
   return rows;
 }
@@ -652,6 +674,9 @@ function liveBoard() {
   }
   const roles = {};
   const champPools = {};
+  const predRows = [];
+  const laneScale = model.oppTalent == null ? 1.0 : model.oppTalent;
+  const teamScale = model.oppTeamTalent == null ? 1.2 : model.oppTeamTalent;
   for (let r = 0; r < ROLE_KEYS.length; r += 1) {
     const roleKey = ROLE_KEYS[r];
     const weights = (model.weights && model.weights[roleKey]) || [];
@@ -664,7 +689,15 @@ function liveBoard() {
       for (let j = 0; j < weights.length; j += 1) pred += (zi[j] || 0) * (weights[j] || 0);
       rows[i].pred = pred;
     }
-    applyOppTalent(rows, model.oppTalent == null ? 0.5 : model.oppTalent);
+    predRows[r] = rows;
+  }
+  const sosForms = predForms(predRows);
+  for (let r = 0; r < ROLE_KEYS.length; r += 1) {
+    applyOppTalent(predRows[r], sosForms, laneScale, teamScale);
+  }
+  for (let r = 0; r < ROLE_KEYS.length; r += 1) {
+    const roleKey = ROLE_KEYS[r];
+    const rows = predRows[r];
     const byName = {};
     const byChamp = {};
     for (let i = 0; i < rows.length; i += 1) {
@@ -865,7 +898,7 @@ function liveBoard() {
       }),
     };
   }
-  liveMemo = { key: key, roles: roles, champs: champs };
+  liveMemo = { key: key, roles: roles, champs: champs, predRows: predRows };
   return liveMemo;
 }
 
@@ -2157,10 +2190,7 @@ function formTrueScore(form, peers, formW, ctx, mastery, teamAvg, roleKey) {
 function trueScoreSeries(name, roleKey, teamName) {
   const roleIndex = ROLE_KEYS.indexOf((roleKey || "").toLowerCase());
   if (roleIndex < 0) return [];
-  const games = filteredGames();
-  const model = ratingsModel();
-  const blend = model.blend || {};
-  const weights = (model.weights && model.weights[roleKey]) || [];
+  const blend = (ratingsModel().blend) || {};
   const prior = model.prior || 28;
   const shrink = model.shrink || 24;
   const halfLife = model.halfLife || 40;
@@ -2170,24 +2200,8 @@ function trueScoreSeries(name, roleKey, teamName) {
   const frozen = (window.RIFT_PLAYER_RATINGS && window.RIFT_PLAYER_RATINGS.roles) || {};
   const teamAvgs = teamAvgMap();
   const peers = formPeerStats(roleKey);
-  let rows = roleObs(games, roleIndex);
-  if (roleKey === "top") residualizeTopFeats(rows);
-  const z = zByGroup(
-    rows,
-    function (row) {
-      return row.league;
-    },
-    function (row) {
-      return row.feats;
-    }
-  );
-  for (let i = 0; i < rows.length; i += 1) {
-    let pred = 0;
-    const zi = z[i] || [];
-    for (let j = 0; j < weights.length; j += 1) pred += (zi[j] || 0) * (weights[j] || 0);
-    rows[i].pred = pred;
-  }
-  applyOppTalent(rows, model.oppTalent == null ? 0.5 : model.oppTalent);
+  const board = liveBoard();
+  const rows = (board.predRows && board.predRows[roleIndex]) || [];
   const bags = {};
   for (let i = 0; i < rows.length; i += 1) {
     const row = rows[i];
