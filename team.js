@@ -216,18 +216,36 @@ function sideLineup(game, side) {
   return rows;
 }
 
+function sideBans(game, side) {
+  return side === "b" ? game.bb || [] : game.rb || [];
+}
+
 function teamDraftScore(teamName, games) {
   const predict = window.RIFT_PREDICT;
   if (!predict || !predict.draftQuality) return null;
   let num = 0;
   let den = 0;
-  const parts = { wr: 0, pop: 0, safety: 0, counter: 0, pairing: 0, unique: 0 };
+  const parts = {
+    wr: 0,
+    pop: 0,
+    safety: 0,
+    counter: 0,
+    pairing: 0,
+    ban: 0,
+    banThreat: 0,
+    banDeny: 0,
+    banMastery: 0,
+  };
   let weights = null;
   for (let i = 0; i < (games || []).length; i += 1) {
     const game = games[i];
     const mine = sideOf(game, teamName);
     if (!mine) continue;
-    const rec = predict.draftQuality(sideLineup(game, mine), sideLineup(game, mine === "b" ? "r" : "b"));
+    const rec = predict.draftQuality(
+      sideLineup(game, mine),
+      sideLineup(game, mine === "b" ? "r" : "b"),
+      sideBans(game, mine)
+    );
     if (!rec || rec.score == null || !isFinite(rec.score)) continue;
     num += rec.score;
     den += 1;
@@ -236,7 +254,10 @@ function teamDraftScore(teamName, games) {
     parts.safety += rec.safety;
     parts.counter += rec.counter;
     parts.pairing += rec.pairing;
-    parts.unique += rec.unique;
+    parts.ban += rec.ban;
+    parts.banThreat += rec.banThreat;
+    parts.banDeny += rec.banDeny;
+    parts.banMastery += rec.banMastery;
     weights = rec.weights;
   }
   if (!den) return null;
@@ -247,14 +268,19 @@ function teamDraftScore(teamName, games) {
     safety: parts.safety / den,
     counter: parts.counter / den,
     pairing: parts.pairing / den,
-    unique: parts.unique / den,
+    ban: parts.ban / den,
+    banThreat: parts.banThreat / den,
+    banDeny: parts.banDeny / den,
+    banMastery: parts.banMastery / den,
     n: den,
     weights: weights,
   };
 }
 
 function draftTip(rec) {
-  if (!rec) return "How well this team drafts vs other teams in this filter. Blind Picks mix, counters and pairings ×1.25.";
+  if (!rec) {
+    return "How well this team drafts vs other teams in this filter. Counters and pairings ×2. Bans score denied threats, enemy pairings, and enemy mastery.";
+  }
   const w = rec.weights || {};
   return (
     "Vs other teams in this filter · " +
@@ -279,15 +305,33 @@ function draftTip(rec) {
     fmtScore(rec.pairing) +
     " ×" +
     Number(w.pairing || 1).toFixed(2) +
-    " · unique " +
-    fmtScore(rec.unique) +
+    " · bans " +
+    fmtScore(rec.ban) +
     " ×" +
-    Number(w.unique || 1).toFixed(2)
+    Number(w.ban || 1).toFixed(2) +
+    " (threat " +
+    fmtScore(rec.banThreat) +
+    " · deny " +
+    fmtScore(rec.banDeny) +
+    " · mastery " +
+    fmtScore(rec.banMastery) +
+    ")"
   );
 }
 
 function centerDraftScores(rows) {
-  const keys = ["score", "wr", "pop", "safety", "counter", "pairing", "unique"];
+  const keys = [
+    "score",
+    "wr",
+    "pop",
+    "safety",
+    "counter",
+    "pairing",
+    "ban",
+    "banThreat",
+    "banDeny",
+    "banMastery",
+  ];
   const means = {};
   for (let k = 0; k < keys.length; k += 1) {
     const key = keys[k];

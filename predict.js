@@ -212,12 +212,13 @@
     return num / den;
   }
 
-  const DRAFT_WEIGHTS = { wr: 1, pop: 1, safety: 1, counter: 1.25, pairing: 1.25, unique: 1 };
+  const DRAFT_WEIGHTS = { wr: 1, pop: 1, safety: 1, counter: 2, pairing: 2, ban: 1.5 };
   const POWER_PRIOR_GAMES = 4000;
   const POPULARITY_SCALE = 4.7;
   const PAIR_PRIOR_GAMES = 400;
   const UNIQUE_ROLE_SCALE = 8;
   const SHARP_COUNTER_DELTA = -2;
+  const BAN_MASTERY_SCALE = 0.25;
   let draftMemo = null;
 
   function winrates() {
@@ -411,7 +412,46 @@
     return -UNIQUE_ROLE_SCALE * overlap;
   }
 
-  function draftQuality(us, them) {
+  function champPrimaryRole(id) {
+    const info = draftIndex().roleRates[id];
+    return (info && info.primary) || "";
+  }
+
+  function banMasteryOf(id, enemies) {
+    let best = null;
+    for (let i = 0; i < (enemies || []).length; i += 1) {
+      const row = enemies[i];
+      if (!row || !row.name) continue;
+      const score = playerChampScore(row.name, id);
+      if (score == null || !isFinite(score)) continue;
+      if (best == null || score > best) best = score;
+    }
+    return best == null ? 0 : best * BAN_MASTERY_SCALE;
+  }
+
+  function scoreBans(bans, us, them) {
+    let threat = 0;
+    let deny = 0;
+    let mastery = 0;
+    let n = 0;
+    for (let i = 0; i < (bans || []).length; i += 1) {
+      const id = bans[i];
+      if (!id) continue;
+      threat += pickCounter(id, champPrimaryRole(id), us);
+      deny += pickPairing(id, them);
+      mastery += banMasteryOf(id, them);
+      n += 1;
+    }
+    if (!n) return { ban: 0, threat: 0, deny: 0, mastery: 0 };
+    return {
+      ban: (threat + deny + mastery) / n,
+      threat: threat / n,
+      deny: deny / n,
+      mastery: mastery / n,
+    };
+  }
+
+  function draftQuality(us, them, bans) {
     us = us || [];
     them = them || [];
     if (us.length < 3 || them.length < 3) return null;
@@ -421,7 +461,6 @@
     let safety = 0;
     let counter = 0;
     let pairing = 0;
-    let unique = 0;
     let n = 0;
     for (let i = 0; i < us.length; i += 1) {
       const row = us[i];
@@ -434,7 +473,6 @@
       safety += blind.safety;
       counter += pickCounter(row.id, role, them);
       pairing += pickPairing(row.id, us);
-      unique += pickUnique(row.id, role, us);
       n += 1;
     }
     if (!n) return null;
@@ -443,16 +481,25 @@
     safety /= n;
     counter /= n;
     pairing /= n;
-    unique /= n;
+    const bansRec = scoreBans(bans, us, them);
     const w = DRAFT_WEIGHTS;
     return {
-      score: w.wr * wr + w.pop * pop + w.safety * safety + w.counter * counter + w.pairing * pairing + w.unique * unique,
+      score:
+        w.wr * wr +
+        w.pop * pop +
+        w.safety * safety +
+        w.counter * counter +
+        w.pairing * pairing +
+        w.ban * bansRec.ban,
       wr: wr,
       pop: pop,
       safety: safety,
       counter: counter,
       pairing: pairing,
-      unique: unique,
+      ban: bansRec.ban,
+      banThreat: bansRec.threat,
+      banDeny: bansRec.deny,
+      banMastery: bansRec.mastery,
       weights: w,
     };
   }
