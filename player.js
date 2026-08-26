@@ -1843,6 +1843,7 @@ function setHead(root, cols, sortKey, sortDir, onSort) {
     const th = document.createElement("th");
     th.textContent = col.label;
     if (col.num) th.className = "sort-num";
+    if (col.title) th.title = col.title;
     th.setAttribute("data-sort", col.key);
     if (sortKey === col.key) th.classList.add(sortDir < 0 ? "sort-desc" : "sort-asc");
     th.addEventListener("click", function () {

@@ -205,6 +205,87 @@ function teamScore(teamName, games) {
   return num / den;
 }
 
+function sideLineup(game, side) {
+  const champs = side === "b" ? game.b : game.r;
+  const names = side === "b" ? game.bp : game.rp;
+  const rows = [];
+  for (let i = 0; i < 5; i += 1) {
+    if (!champs || !champs[i]) continue;
+    rows.push({ id: champs[i], name: (names && names[i]) || "", role: ROLE_KEYS[i] });
+  }
+  return rows;
+}
+
+function teamDraftScore(teamName, games) {
+  const predict = window.RIFT_PREDICT;
+  if (!predict || !predict.draftQuality) return null;
+  let num = 0;
+  let den = 0;
+  const parts = { wr: 0, pop: 0, safety: 0, counter: 0, pairing: 0, unique: 0 };
+  let weights = null;
+  for (let i = 0; i < (games || []).length; i += 1) {
+    const game = games[i];
+    const mine = sideOf(game, teamName);
+    if (!mine) continue;
+    const rec = predict.draftQuality(sideLineup(game, mine), sideLineup(game, mine === "b" ? "r" : "b"));
+    if (!rec || rec.score == null || !isFinite(rec.score)) continue;
+    num += rec.score;
+    den += 1;
+    parts.wr += rec.wr;
+    parts.pop += rec.pop;
+    parts.safety += rec.safety;
+    parts.counter += rec.counter;
+    parts.pairing += rec.pairing;
+    parts.unique += rec.unique;
+    weights = rec.weights;
+  }
+  if (!den) return null;
+  return {
+    score: num / den,
+    wr: parts.wr / den,
+    pop: parts.pop / den,
+    safety: parts.safety / den,
+    counter: parts.counter / den,
+    pairing: parts.pairing / den,
+    unique: parts.unique / den,
+    n: den,
+    weights: weights,
+  };
+}
+
+function draftTip(rec) {
+  if (!rec) return "How well this team drafts, using the Blind Picks mix (counters and pairings ×1.25)";
+  const w = rec.weights || {};
+  return (
+    "Blind Picks mix over " +
+    rec.n +
+    " drafts · wr " +
+    fmtScore(rec.wr) +
+    " ×" +
+    Number(w.wr || 1).toFixed(2) +
+    " · pop " +
+    fmtScore(rec.pop) +
+    " ×" +
+    Number(w.pop || 1).toFixed(2) +
+    " · safety " +
+    fmtScore(rec.safety) +
+    " ×" +
+    Number(w.safety || 1).toFixed(2) +
+    " · counters " +
+    fmtScore(rec.counter) +
+    " ×" +
+    Number(w.counter || 1).toFixed(2) +
+    " · pairing " +
+    fmtScore(rec.pairing) +
+    " ×" +
+    Number(w.pairing || 1).toFixed(2) +
+    " · unique " +
+    fmtScore(rec.unique) +
+    " ×" +
+    Number(w.unique || 1).toFixed(2)
+  );
+}
+
 function teamDirectory() {
   const q = (search || "").trim().toLowerCase();
   const map = collectTeams();
@@ -214,6 +295,7 @@ function teamDirectory() {
     const rec = map[names[i]];
     if (q && rec.name.toLowerCase().indexOf(q) === -1) continue;
     const n = rec.games.length;
+    const draftRec = teamDraftScore(rec.name, rec.games);
     out.push({
       name: rec.name,
       league: mostCommon(rec.leagues),
@@ -228,6 +310,8 @@ function teamDirectory() {
       champs: topKeys(rec.champs, 5),
       score: teamScore(rec.name, rec.games),
       vs: rosterTrueScore(rosterRows(rec)),
+      draft: draftRec ? draftRec.score : null,
+      draftRec: draftRec,
       rec: rec,
     });
   }
@@ -341,6 +425,12 @@ function renderTeamDirectory() {
       { key: "name", label: "Team" },
       { key: "vs", label: "True score", num: true },
       { key: "score", label: "Score", num: true },
+      {
+        key: "draft",
+        label: "Drafting score",
+        num: true,
+        title: "Blind Picks mix on their drafts. Counters and pairings are weighted 1.25×.",
+      },
       { key: "league", label: "League" },
       { key: "champ", label: "Pool" },
       { key: "games", label: "Games", num: true },
@@ -363,7 +453,7 @@ function renderTeamDirectory() {
     }
   );
   if (!rows.length) {
-    emptyRow(teamEls.body, 12, "No teams match that filter.");
+    emptyRow(teamEls.body, 13, "No teams match that filter.");
     return;
   }
   teamEls.body.innerHTML = "";
@@ -386,6 +476,10 @@ function renderTeamDirectory() {
     const score = document.createElement("td");
     score.className = "num " + scoreTone(row.score);
     score.textContent = fmtScore(row.score);
+    const draft = document.createElement("td");
+    draft.className = "num " + scoreTone(row.draft);
+    draft.textContent = fmtScore(row.draft);
+    draft.title = draftTip(row.draftRec);
     const leagueCell = document.createElement("td");
     leagueCell.textContent = row.league || "—";
     const pool = document.createElement("td");
@@ -411,7 +505,7 @@ function renderTeamDirectory() {
     const kda = document.createElement("td");
     kda.className = "num";
     kda.textContent = fmtRate(row.kda);
-    tr.append(name, vs, score, leagueCell, pool, games, wr, gd, fb, ft, fd, kda);
+    tr.append(name, vs, score, draft, leagueCell, pool, games, wr, gd, fb, ft, fd, kda);
     teamEls.body.append(tr);
   }
 }
@@ -430,6 +524,7 @@ function renderTeamDetail() {
   const roster = rosterRows(rec);
   const score = teamScore(rec.name, rec.games);
   const trueScore = rosterTrueScore(roster);
+  const draftRec = teamDraftScore(rec.name, rec.games);
   const wr = n ? rec.wins / n : 0;
   teamEls.title.textContent = rec.name;
   document.title = rec.name + " — Team stats";
@@ -439,6 +534,9 @@ function renderTeamDetail() {
   teamEls.summary.append(tile("League", mostCommon(rec.leagues) || "—"));
   teamEls.summary.append(tile("True score", fmtScore(trueScore), scoreTone(trueScore)));
   teamEls.summary.append(tile("Score", fmtScore(score), scoreTone(score)));
+  const draftTile = tile("Drafting score", fmtScore(draftRec && draftRec.score), scoreTone(draftRec && draftRec.score));
+  draftTile.title = draftTip(draftRec);
+  teamEls.summary.append(draftTile);
   teamEls.summary.append(tile("Games", n.toLocaleString()));
   teamEls.summary.append(tile("WR", fmtPct(wr), wr >= 0.5 ? "up" : "down"));
   teamEls.summary.append(tile("KDA", fmtRate(kdaRatio(rec.k, rec.d, rec.a))));

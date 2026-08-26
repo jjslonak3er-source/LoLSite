@@ -212,6 +212,251 @@
     return num / den;
   }
 
+  const DRAFT_WEIGHTS = { wr: 1, pop: 1, safety: 1, counter: 1.25, pairing: 1.25, unique: 1 };
+  const POWER_PRIOR_GAMES = 4000;
+  const POPULARITY_SCALE = 4.7;
+  const PAIR_PRIOR_GAMES = 400;
+  const UNIQUE_ROLE_SCALE = 8;
+  const SHARP_COUNTER_DELTA = -2;
+  let draftMemo = null;
+
+  function winrates() {
+    return root.RIFT_WINRATES || {};
+  }
+
+  function oracles() {
+    return root.RIFT_ORACLES || {};
+  }
+
+  function oePicks() {
+    const rec = oracles();
+    if (rec.recent && rec.recent.picks) return rec.recent.picks;
+    return rec.positions || {};
+  }
+
+  function rebuildDraftMemo() {
+    const counters = matchups();
+    const positions = oracles().positions || {};
+    const picks = oePicks();
+    const champGames = {};
+    const ids = Object.keys(counters);
+    for (let i = 0; i < ids.length; i += 1) {
+      const vs = counters[ids[i]] || {};
+      const opp = Object.keys(vs);
+      let total = 0;
+      for (let j = 0; j < opp.length; j += 1) {
+        if (vs[opp[j]] && typeof vs[opp[j]].games === "number") total += vs[opp[j]].games;
+      }
+      champGames[ids[i]] = total;
+    }
+    const roleRates = {};
+    const posIds = Object.keys(positions);
+    for (let i = 0; i < posIds.length; i += 1) {
+      const counts = positions[posIds[i]] || {};
+      let total = 0;
+      for (let r = 0; r < ROLE_KEYS.length; r += 1) total += counts[ROLE_KEYS[r]] || 0;
+      if (!total) continue;
+      const rates = {};
+      let primary = ROLE_KEYS[0];
+      let best = -1;
+      for (let r = 0; r < ROLE_KEYS.length; r += 1) {
+        const key = ROLE_KEYS[r];
+        const rate = (counts[key] || 0) / total;
+        rates[key] = rate;
+        if (rate > best) {
+          best = rate;
+          primary = key;
+        }
+      }
+      roleRates[posIds[i]] = { rates: rates, primary: primary };
+    }
+    const popPrior = {};
+    for (let r = 0; r < ROLE_KEYS.length; r += 1) {
+      const role = ROLE_KEYS[r];
+      const counts = [];
+      const champIds = Object.keys(picks);
+      for (let i = 0; i < champIds.length; i += 1) {
+        const n = (picks[champIds[i]] && picks[champIds[i]][role]) || 0;
+        if (n) counts.push(n);
+      }
+      counts.sort(function (a, b) {
+        return a - b;
+      });
+      const median = counts.length ? counts[Math.floor(counts.length / 2)] : 20;
+      popPrior[role] = Math.max(8, median);
+    }
+    draftMemo = { champGames: champGames, roleRates: roleRates, picks: picks, popPrior: popPrior, blind: {} };
+    return draftMemo;
+  }
+
+  function draftIndex() {
+    return draftMemo || rebuildDraftMemo();
+  }
+
+  function laneEntry(id, role) {
+    const lanes = winrates().lanes || {};
+    const lane = lanes[role];
+    return (lane && lane.champs && lane.champs[id]) || null;
+  }
+
+  function champPower(id, role) {
+    const lanes = winrates().lanes || {};
+    const lane = lanes[role];
+    const entry = laneEntry(id, role);
+    if (!lane || !entry || typeof entry.wr !== "number") return 0;
+    const avg = typeof lane.avg_wr === "number" ? lane.avg_wr : 50;
+    const games = entry.games || 0;
+    return (entry.wr - avg) * (games / (games + POWER_PRIOR_GAMES));
+  }
+
+  function champPop(id, role) {
+    const idx = draftIndex();
+    const n = (idx.picks[id] && idx.picks[id][role]) || 0;
+    const prior = idx.popPrior[role] || 20;
+    return POPULARITY_SCALE * (n / (n + prior));
+  }
+
+  function champSafety(id, role) {
+    const vs = matchups()[id];
+    if (!vs) return 0;
+    const oppIds = Object.keys(vs);
+    let deltaSum = 0;
+    let weightSum = 0;
+    let sharpWeight = 0;
+    for (let i = 0; i < oppIds.length; i += 1) {
+      const them = oppIds[i];
+      if (them === id) continue;
+      const threat = laneEntry(them, role);
+      if (!threat || (threat.lane_pct || 0) < 8) continue;
+      const rec = matchupRec(id, them);
+      if (!rec) continue;
+      const weight = threat.games || 0;
+      if (weight <= 0) continue;
+      deltaSum += rec.delta * weight;
+      weightSum += weight;
+      if (rec.delta <= SHARP_COUNTER_DELTA) sharpWeight += weight;
+    }
+    if (!weightSum) return 0;
+    return deltaSum / weightSum - 2.2 * (sharpWeight / weightSum);
+  }
+
+  function matchupPopWeight(us, them, games) {
+    const totals = draftIndex().champGames;
+    const usTotal = totals[us] || 0;
+    const themTotal = totals[them] || 0;
+    const shareUs = usTotal > 0 && games ? games / usTotal : 0;
+    const shareThem = themTotal > 0 && games ? games / themTotal : 0;
+    const geo =
+      shareUs > 0 && shareThem > 0 ? Math.sqrt(shareUs * shareThem) : shareUs || shareThem;
+    return 0.95 + 0.1 * Math.max(0, Math.min(1, geo / 0.03));
+  }
+
+  function positionWeight(id, role) {
+    const info = draftIndex().roleRates[id];
+    const overlap = info && info.rates ? info.rates[role] || 0 : 0;
+    return 0.4 + 0.6 * overlap;
+  }
+
+  function champBlind(id, role) {
+    const idx = draftIndex();
+    const key = id + "|" + role;
+    if (idx.blind[key]) return idx.blind[key];
+    const rec = {
+      power: champPower(id, role),
+      pop: champPop(id, role),
+      safety: champSafety(id, role),
+    };
+    idx.blind[key] = rec;
+    return rec;
+  }
+
+  function pickCounter(id, role, enemies) {
+    let sum = 0;
+    for (let i = 0; i < enemies.length; i += 1) {
+      const them = enemies[i];
+      if (!them || !them.id) continue;
+      const rec = matchupRec(id, them.id);
+      if (!rec) continue;
+      sum += rec.delta * matchupPopWeight(id, them.id, rec.games) * positionWeight(id, role);
+    }
+    return sum;
+  }
+
+  function pickPairing(id, allies) {
+    let sum = 0;
+    for (let i = 0; i < allies.length; i += 1) {
+      const them = allies[i];
+      if (!them || !them.id || them.id === id) continue;
+      const entry = synergyRec(id, them.id);
+      if (!entry || typeof entry.delta !== "number") continue;
+      const games = entry.games || 0;
+      sum += entry.delta * (games / (games + PAIR_PRIOR_GAMES));
+    }
+    return sum;
+  }
+
+  function pickUnique(id, role, allies) {
+    const info = draftIndex().roleRates[id];
+    const rates = (info && info.rates) || {};
+    const filled = { top: 0, jng: 0, mid: 0, adc: 0, sup: 0 };
+    for (let i = 0; i < allies.length; i += 1) {
+      const key = String((allies[i] && allies[i].role) || "").toLowerCase();
+      if (key && filled[key] != null && key !== role) filled[key] += 1;
+    }
+    let overlap = 0;
+    for (let i = 0; i < ROLE_KEYS.length; i += 1) {
+      const key = ROLE_KEYS[i];
+      overlap += (rates[key] || 0) * (filled[key] || 0);
+    }
+    return -UNIQUE_ROLE_SCALE * overlap;
+  }
+
+  function draftQuality(us, them) {
+    us = us || [];
+    them = them || [];
+    if (us.length < 3 || them.length < 3) return null;
+    draftIndex();
+    let wr = 0;
+    let pop = 0;
+    let safety = 0;
+    let counter = 0;
+    let pairing = 0;
+    let unique = 0;
+    let n = 0;
+    for (let i = 0; i < us.length; i += 1) {
+      const row = us[i];
+      if (!row || !row.id) continue;
+      const role = String(row.role || "").toLowerCase();
+      if (!role) continue;
+      const blind = champBlind(row.id, role);
+      wr += blind.power;
+      pop += blind.pop;
+      safety += blind.safety;
+      counter += pickCounter(row.id, role, them);
+      pairing += pickPairing(row.id, us);
+      unique += pickUnique(row.id, role, us);
+      n += 1;
+    }
+    if (!n) return null;
+    wr /= n;
+    pop /= n;
+    safety /= n;
+    counter /= n;
+    pairing /= n;
+    unique /= n;
+    const w = DRAFT_WEIGHTS;
+    return {
+      score: w.wr * wr + w.pop * pop + w.safety * safety + w.counter * counter + w.pairing * pairing + w.unique * unique,
+      wr: wr,
+      pop: pop,
+      safety: safety,
+      counter: counter,
+      pairing: pairing,
+      unique: unique,
+      weights: w,
+    };
+  }
+
   function matchPredict(blue, red) {
     const draft = lineupExpect(blue, red);
     const blueScore = rosterScore(blue);
@@ -242,6 +487,7 @@
     rosterScore: rosterScore,
     playerScore: playerScore,
     champResidual: champResidual,
+    draftQuality: draftQuality,
     matchPredict: matchPredict,
   };
 })(window);
