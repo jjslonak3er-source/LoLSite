@@ -361,10 +361,17 @@ select:hover,
   padding: 12px 12px 8px;
 }
 
-.team-head strong {
+.team-head strong,
+.team-head a.team-link {
   font-family: Sora, Manrope, sans-serif;
   font-size: 15px;
   letter-spacing: -0.03em;
+  color: inherit;
+  text-decoration: none;
+}
+
+.team-head a.team-link:hover {
+  color: var(--gold-bright);
 }
 
 .team-head span {
@@ -1826,7 +1833,12 @@ select:hover,
 .match-side-name {
   font-weight: 700;
   min-width: 72px;
-  cursor: pointer;
+  color: inherit;
+  text-decoration: none;
+}
+
+.match-side-name:hover {
+  color: var(--gold-bright);
 }
 
 .match-side.win .match-side-name {

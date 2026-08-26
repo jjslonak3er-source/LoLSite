@@ -483,15 +483,16 @@ function champCell(ids, team, win) {
   const td = document.createElement("td");
   const wrap = document.createElement("div");
   wrap.className = "match-side" + (win ? " win" : "");
-  const name = document.createElement("span");
+  const name = document.createElement("a");
   name.className = "match-side-name";
   name.textContent = team || "—";
-  name.title = "Filter " + (team || "team");
-  name.addEventListener("click", function (event) {
-    event.stopPropagation();
-    toggleTeam(team);
-    render();
-  });
+  if (team) {
+    name.href = "team.html?team=" + encodeURIComponent(team);
+    name.title = "Open " + team;
+    name.addEventListener("click", function (event) {
+      event.stopPropagation();
+    });
+  }
   const icons = document.createElement("div");
   icons.className = "match-icons";
   for (let i = 0; i < 5; i += 1) {

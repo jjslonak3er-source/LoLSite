@@ -805,6 +805,17 @@ function renderPicks(root, game, side, roster) {
   }
 }
 
+function teamHref(name) {
+  return name ? "team.html?team=" + encodeURIComponent(name) : "";
+}
+
+function setTeamLink(el, name) {
+  if (!el) return;
+  el.textContent = name || "—";
+  if (name) el.href = teamHref(name);
+  else el.removeAttribute("href");
+}
+
 function render(game) {
   currentGame = game;
   const roster = playersOf(game);
@@ -814,8 +825,8 @@ function render(game) {
   mvpPlayer = pickMvp(roster);
   els.title.textContent = game.bt + " vs " + game.rt;
   document.title = game.bt + " vs " + game.rt + " — Match preview";
-  els.blueName.textContent = game.bt;
-  els.redName.textContent = game.rt;
+  setTeamLink(els.blueName, game.bt);
+  setTeamLink(els.redName, game.rt);
   const blueWin = game.w === 1;
   els.blueTeam.classList.toggle("winner", blueWin);
   els.redTeam.classList.toggle("winner", !blueWin);
