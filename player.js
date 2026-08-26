@@ -559,10 +559,17 @@ function roleObs(games, roleIndex) {
         ];
       if (roleIndex === 0) {
         let teamK = 0;
-        for (let i = 0; i < 5; i += 1) teamK += (kdas[i] && kdas[i][0]) || 0;
+        let teamDt = 0;
+        for (let i = 0; i < 5; i += 1) {
+          teamK += (kdas[i] && kdas[i][0]) || 0;
+          teamDt += (x.pt && x.pt[off + i]) || 0;
+        }
         const k = (kdas[roleIndex] && kdas[roleIndex][0]) || 0;
         const a = (kdas[roleIndex] && kdas[roleIndex][2]) || 0;
-        feats.push(teamK ? (k + a) / teamK : 0);
+        const kp = teamK ? (k + a) / teamK : 0;
+        const dtShare = teamDt ? ((x.pt && x.pt[off + roleIndex]) || 0) / teamDt : 0;
+        const gpm = ((x.pg && x.pg[off + roleIndex]) || 0) / minutes;
+        feats.push(kp, dtShare / Math.max(gpm, 1), dtShare / Math.max(kp, 0.05));
       }
       out.push({
         name: names[roleIndex] || "",

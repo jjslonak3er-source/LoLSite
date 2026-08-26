@@ -45,9 +45,8 @@ FEATURE_KEYS = (
     "deaths_pm",
     "dpm_vs",
 )
-# Top-only: (kills + assists) / team kills. Other roles still omit KDA
-# because it mostly restates the result; tops need involvement vs islanding.
-TOP_EXTRA_FEATURES = ("kp",)
+# Top-only extras. Other roles still omit KDA; tops need soak and involvement.
+TOP_EXTRA_FEATURES = ("kp", "dt_share_gpm", "dt_share_kp")
 
 
 def fnum(row: dict, key: str) -> float | None:
@@ -99,6 +98,8 @@ def extract_rates(row: dict) -> dict[str, float] | None:
     dpm = fnum(row, "dpm")
     cspm = fnum(row, "cspm")
     vspm = fnum(row, "vspm")
+    dtpm = fnum(row, "damagetakenperminute")
+    gold = fnum(row, "totalgold")
     gd10 = fnum(row, "golddiffat10")
     gd15 = fnum(row, "golddiffat15")
     xd15 = fnum(row, "xpdiffat15")
@@ -116,6 +117,8 @@ def extract_rates(row: dict) -> dict[str, float] | None:
         "vspm": vspm or 0.0,
         "deaths_pm": deaths / minutes,
         "dpm_vs": 0.0,
+        "dtpm": dtpm or 0.0,
+        "gpm": (gold or 0.0) / minutes,
         "kills": kills,
         "deaths": deaths,
         "assists": assists,
@@ -452,6 +455,17 @@ def side_kill_participation(side_recs: dict, role: str) -> float:
     return (float(rec.get("kills") or 0.0) + float(rec.get("assists") or 0.0)) / team_kills
 
 
+def side_dt_share(side_recs: dict, role: str) -> float:
+    total = 0.0
+    for key in ROLES:
+        rec = side_recs.get(key) or {}
+        total += float(rec.get("dtpm") or 0.0)
+    rec = side_recs.get(role) or {}
+    if total <= 0:
+        return 0.0
+    return float(rec.get("dtpm") or 0.0) / total
+
+
 def map_tilt(side_recs: dict, role: str) -> float:
     """How much richer the rest of the map is than top. Positive = dump lane."""
     if role != "top":
@@ -485,6 +499,9 @@ def observations(games: list[dict], role: str) -> list[dict]:
             rec["win"] = rec["win"]
             rec["tilt"] = map_tilt(game[side], role)
             rec["kp"] = side_kill_participation(game[side], role)
+            dt_share = side_dt_share(game[side], role)
+            rec["dt_share_gpm"] = dt_share / max(float(rec.get("gpm") or 0.0), 1.0)
+            rec["dt_share_kp"] = dt_share / max(rec["kp"], 0.05)
             rec["features"] = [rec[key] for key in role_feature_keys(role)]
             rows.append(rec)
     return rows

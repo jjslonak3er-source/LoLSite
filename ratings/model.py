@@ -50,20 +50,36 @@ LEAGUES = ("LCK", "LPL", "LEC", "LCS")
 WORLD_LEAGUES = LEAGUES + ("LCP", "CBLOL", "VCS", "PCS")
 
 
-# Ridge often buries kill participation under leftover lane stats. After
-# fitting top, lift KP so involvement actually moves Score. Floor keeps it
-# among the largest qualities even if the raw coef is tiny.
-TOP_KP_BOOST = 2.5
-TOP_KP_MIN = 0.20
+# After fitting top, lift these so they actually move Score. Ridge buries
+# vision, soak, and KP under leftover lane stats. Floors are in the same
+# units as the learned coefs (z -> win).
+TOP_WEIGHT_FLOOR = {
+    "vspm": 0.14,
+    "kp": 0.32,
+    "dt_share_gpm": 0.16,
+    "dt_share_kp": 0.16,
+}
+TOP_WEIGHT_BOOST = {
+    "vspm": 3.0,
+    "kp": 4.0,
+    "dt_share_gpm": 2.5,
+    "dt_share_kp": 2.5,
+}
 
 
-def boost_top_kp(fitted: dict) -> dict:
+def boost_top_form(fitted: dict) -> dict:
     keys = fitted.get("keys") or FEATURE_KEYS
-    if "kp" not in keys:
-        return fitted
-    idx = keys.index("kp")
     coef = list(fitted["coef"])
-    coef[idx] = max(coef[idx] * TOP_KP_BOOST, TOP_KP_MIN)
+    changed = False
+    for name, floor in TOP_WEIGHT_FLOOR.items():
+        if name not in keys:
+            continue
+        idx = keys.index(name)
+        boost = TOP_WEIGHT_BOOST.get(name, 1.0)
+        coef[idx] = max(coef[idx] * boost, floor)
+        changed = True
+    if not changed:
+        return fitted
     fitted["coef"] = coef
     fitted["weights"] = {keys[i]: coef[i] for i in range(len(keys))}
     p = len(coef)
@@ -602,7 +618,7 @@ def blend_role(
         return {"weights": {}, "players": [], "champions": {}}
     fitted = fit_quality(rows, role_feature_keys(role) if role else FEATURE_KEYS)
     if role == "top":
-        boost_top_kp(fitted)
+        boost_top_form(fitted)
     quality = quality_scores(rows, fitted, half_life=half_life)
     eligible = {
         name: rec
