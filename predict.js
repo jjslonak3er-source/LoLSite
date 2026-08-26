@@ -241,6 +241,7 @@
     lineupExpect: lineupExpect,
     rosterScore: rosterScore,
     playerScore: playerScore,
+    champResidual: champResidual,
     matchPredict: matchPredict,
   };
 })(window);

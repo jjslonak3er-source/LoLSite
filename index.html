@@ -15,7 +15,7 @@
       href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&family=Sora:wght@600;700&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="styles.css?v=29" />
+    <link rel="stylesheet" href="styles.css?v=31" />
     <script>
       window.addEventListener("error", function (event) {
         var status = document.getElementById("boot-status");
@@ -77,7 +77,24 @@
       <main class="board">
         <section class="team team-blue" aria-label="Blue side">
           <header class="team-head">
-            <input id="blue-name" class="team-name" value="Blue Side" maxlength="24" />
+            <div class="team-select">
+              <div class="filter-combo team-combo">
+                <input
+                  id="blue-name"
+                  class="team-name"
+                  value="Blue Side"
+                  maxlength="40"
+                  placeholder="Blue Side"
+                  autocomplete="off"
+                  autocorrect="off"
+                  autocapitalize="off"
+                  spellcheck="false"
+                  aria-label="Blue team"
+                />
+                <div id="blue-team-menu" class="filter-menu" hidden></div>
+              </div>
+              <p id="blue-roster" class="team-roster" hidden></p>
+            </div>
             <span>Blue</span>
           </header>
           <div id="blue-bans" class="bans"></div>
@@ -143,7 +160,24 @@
 
         <section class="team team-red" aria-label="Red side">
           <header class="team-head">
-            <input id="red-name" class="team-name" value="Red Side" maxlength="24" />
+            <div class="team-select">
+              <div class="filter-combo team-combo">
+                <input
+                  id="red-name"
+                  class="team-name"
+                  value="Red Side"
+                  maxlength="40"
+                  placeholder="Red Side"
+                  autocomplete="off"
+                  autocorrect="off"
+                  autocapitalize="off"
+                  spellcheck="false"
+                  aria-label="Red team"
+                />
+                <div id="red-team-menu" class="filter-menu" hidden></div>
+              </div>
+              <p id="red-roster" class="team-roster" hidden></p>
+            </div>
             <span>Red</span>
           </header>
           <div id="red-bans" class="bans"></div>
@@ -180,6 +214,9 @@
     <script src="oracles.js?v=2"></script>
     <script src="winrates.js"></script>
     <script src="synergies.js"></script>
-    <script src="app.js" onerror="document.getElementById('boot-status').textContent='Could not load app.js'"></script>
+    <script src="pro-games.js?v=2"></script>
+    <script src="player-ratings.js?v=9"></script>
+    <script src="predict.js?v=4"></script>
+    <script src="app.js?v=5" onerror="document.getElementById('boot-status').textContent='Could not load app.js'"></script>
   </body>
 </html>

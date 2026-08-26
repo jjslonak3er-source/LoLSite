@@ -53,6 +53,21 @@ const MVP_WEIGHTS = {
   },
 };
 
+const PERF_ROLE = 0.6;
+const PERF_CHAMP = 0.4;
+const PERF_MIN_CHAMP = 8;
+const PERF_CLAMP = 3.2;
+const PERF_KEYS = ["gd15", "dpm", "dpmVs", "deaths", "cspm", "kp", "vis", "kapm", "dmgShare", "goldShare"];
+const PERF_WEIGHTS = {
+  TOP: { gd15: 0.55, dpm: 0.85, dpmVs: 0.3, deaths: -1.2, cspm: 0.15, kp: 0.8, vis: 0.15, kapm: 0.7, dmgShare: 0.55, goldShare: 0.45 },
+  JNG: { gd15: 0.2, dpm: 0.7, dpmVs: 0.15, deaths: -0.95, cspm: 0, kp: 1.35, vis: 0.95, kapm: 0.9, dmgShare: 0.35, goldShare: 0.25 },
+  MID: { gd15: 0.4, dpm: 1.15, dpmVs: 0.35, deaths: -1.05, cspm: 0.12, kp: 0.95, vis: 0.15, kapm: 0.85, dmgShare: 0.7, goldShare: 0.4 },
+  ADC: { gd15: 0.25, dpm: 1.25, dpmVs: 0.3, deaths: -1.0, cspm: 0.15, kp: 1.05, vis: 0.1, kapm: 0.9, dmgShare: 0.8, goldShare: 0.45 },
+  SUP: { gd15: 0.1, dpm: 0.15, dpmVs: 0.05, deaths: -0.9, cspm: 0, kp: 1.45, vis: 1.35, kapm: 1.05, dmgShare: 0.1, goldShare: 0.15 },
+};
+
+let perfMemo = null;
+
 function champName(id) {
   return (champMap.get(id) && champMap.get(id).name) || id || "";
 }
@@ -161,6 +176,9 @@ function playersOf(game) {
         dpm: minutes ? dmg / minutes : 0,
         gpm: minutes ? gold / minutes : 0,
         vspm: minutes ? vis / minutes : 0,
+        deathsPm: minutes ? (kda[1] || 0) / minutes : 0,
+        kapm: minutes ? ((kda[0] || 0) + (kda[2] || 0)) / minutes : 0,
+        dpmVs: 0,
         kp: side.kills ? (kda[0] + kda[2]) / side.kills : 0,
         dmgShare: side.dmg ? dmg / side.dmg : 0,
         goldShare: side.gold ? gold / side.gold : 0,
@@ -168,7 +186,162 @@ function playersOf(game) {
       });
     }
   }
+  for (let i = 0; i < 5; i += 1) {
+    const blue = out[i];
+    const red = out[i + 5];
+    if (!blue || !red) continue;
+    blue.dpmVs = (blue.dpm || 0) - (red.dpm || 0);
+    red.dpmVs = (red.dpm || 0) - (blue.dpm || 0);
+  }
   return out;
+}
+
+function perfFeats(player) {
+  return {
+    gd15: player.gd15,
+    dpm: player.dpm,
+    dpmVs: player.dpmVs,
+    deaths: player.deathsPm,
+    cspm: player.cspm,
+    kp: player.kp,
+    vis: player.vspm,
+    kapm: player.kapm,
+    dmgShare: player.dmgShare,
+    goldShare: player.goldShare,
+  };
+}
+
+function addPerfBag(bag, key, feats) {
+  const rec = bag[key] || (bag[key] = { n: 0, sums: {}, sq: {} });
+  rec.n += 1;
+  for (let i = 0; i < PERF_KEYS.length; i += 1) {
+    const name = PERF_KEYS[i];
+    const value = feats[name];
+    if (value == null || !isFinite(value)) continue;
+    rec.sums[name] = (rec.sums[name] || 0) + value;
+    rec.sq[name] = (rec.sq[name] || 0) + value * value;
+  }
+}
+
+function perfStats(rec) {
+  if (!rec || rec.n < 4) return null;
+  const out = { n: rec.n };
+  for (let i = 0; i < PERF_KEYS.length; i += 1) {
+    const name = PERF_KEYS[i];
+    const n = rec.sums[name] == null ? 0 : rec.n;
+    if (!n) continue;
+    const mean = rec.sums[name] / rec.n;
+    const std = Math.sqrt(Math.max(0, rec.sq[name] / rec.n - mean * mean)) || 1;
+    out[name] = { mean: mean, std: std };
+  }
+  return out;
+}
+
+function gameFeats(game, side, index) {
+  const minutes = (game.gl || 0) / 60;
+  if (minutes < 8) return null;
+  const x = game.x || {};
+  const off = side === "blue" ? 0 : 5;
+  const opp = side === "blue" ? 5 : 0;
+  const kdas = side === "blue" ? game.bk : game.rk;
+  const kda = (kdas && kdas[index]) || [0, 0, 0];
+  let teamK = 0;
+  let teamDmg = 0;
+  let teamGold = 0;
+  for (let i = 0; i < 5; i += 1) {
+    teamK += (kdas[i] && kdas[i][0]) || 0;
+    teamDmg += (x.pd && x.pd[off + i]) || 0;
+    teamGold += (x.pg && x.pg[off + i]) || 0;
+  }
+  const dmg = (x.pd && x.pd[off + index]) || 0;
+  const oppDmg = (x.pd && x.pd[opp + index]) || 0;
+  const cs = (x.pc && x.pc[off + index]) || 0;
+  const vis = (x.pv && x.pv[off + index]) || 0;
+  const gold = (x.pg && x.pg[off + index]) || 0;
+  const lane = x.g15 ? x.g15[index] || 0 : null;
+  return {
+    gd15: lane == null ? null : side === "blue" ? lane : -lane,
+    dpm: dmg / minutes,
+    dpmVs: (dmg - oppDmg) / minutes,
+    deaths: (kda[1] || 0) / minutes,
+    cspm: cs / minutes,
+    kp: teamK ? (kda[0] + kda[2]) / teamK : 0,
+    vis: vis / minutes,
+    kapm: ((kda[0] || 0) + (kda[2] || 0)) / minutes,
+    dmgShare: teamDmg ? dmg / teamDmg : 0,
+    goldShare: teamGold ? gold / teamGold : 0,
+  };
+}
+
+function perfBaselines() {
+  if (perfMemo) return perfMemo;
+  const roleBags = {};
+  const champBags = {};
+  const games = (window.RIFT_PRO_GAMES && window.RIFT_PRO_GAMES.games) || [];
+  for (let g = 0; g < games.length; g += 1) {
+    const game = games[g];
+    for (let s = 0; s < 2; s += 1) {
+      const side = s === 0 ? "blue" : "red";
+      const champs = s === 0 ? game.b : game.r;
+      for (let i = 0; i < 5; i += 1) {
+        const feats = gameFeats(game, side, i);
+        if (!feats) continue;
+        const role = ROLE_KEYS[i];
+        addPerfBag(roleBags, role, feats);
+        if (champs && champs[i]) addPerfBag(champBags, champs[i] + "|" + role, feats);
+      }
+    }
+  }
+  const role = {};
+  const champ = {};
+  const roleKeys = Object.keys(roleBags);
+  for (let i = 0; i < roleKeys.length; i += 1) role[roleKeys[i]] = perfStats(roleBags[roleKeys[i]]);
+  const champKeys = Object.keys(champBags);
+  for (let i = 0; i < champKeys.length; i += 1) {
+    const rec = champBags[champKeys[i]];
+    if (rec.n < PERF_MIN_CHAMP) continue;
+    champ[champKeys[i]] = perfStats(rec);
+  }
+  perfMemo = { role: role, champ: champ };
+  return perfMemo;
+}
+
+function weightedPerf(feats, weights, baseline) {
+  if (!feats || !weights || !baseline) return null;
+  let num = 0;
+  let den = 0;
+  for (let i = 0; i < PERF_KEYS.length; i += 1) {
+    const key = PERF_KEYS[i];
+    const w = weights[key];
+    const value = feats[key];
+    const stat = baseline[key];
+    if (!w || value == null || !isFinite(value) || !stat) continue;
+    let z = (value - stat.mean) / stat.std;
+    if (z > PERF_CLAMP) z = PERF_CLAMP;
+    if (z < -PERF_CLAMP) z = -PERF_CLAMP;
+    num += w * z;
+    den += Math.abs(w);
+  }
+  if (!den) return null;
+  return num / den;
+}
+
+function attachPerformance(players) {
+  const base = perfBaselines();
+  for (let i = 0; i < players.length; i += 1) {
+    const player = players[i];
+    const feats = perfFeats(player);
+    const weights = PERF_WEIGHTS[player.role] || PERF_WEIGHTS.MID;
+    const roleZ = weightedPerf(feats, weights, base.role[player.role]);
+    const champZ = weightedPerf(feats, weights, base.champ[player.id + "|" + player.role]);
+    let score = null;
+    if (roleZ != null && champZ != null) score = PERF_ROLE * roleZ + PERF_CHAMP * champZ;
+    else if (roleZ != null) score = roleZ;
+    else if (champZ != null) score = champZ;
+    player.perf = score;
+    player.perfRole = roleZ;
+    player.perfChamp = champZ;
+  }
 }
 
 function mvpScore(player) {
@@ -225,8 +398,16 @@ function renderPlayerPanel(player) {
   head.append(title);
   head.append(node("span", "", player.team + " · " + player.role + (player.win ? " · Win" : " · Loss")));
   root.append(head);
-  root.append(node("div", "match-player-kda", player.k + " / " + player.d + " / " + player.a));
+  const kdaLine = node("div", "match-player-kda", player.k + " / " + player.d + " / " + player.a);
+  root.append(kdaLine);
   const grid = node("div", "match-stat-grid");
+  const perfTile = tile(
+    "Performance",
+    player.perf == null ? "—" : fmtPerf(player.perf),
+    player.perf == null || Math.abs(player.perf) < 0.05 ? "" : diffTone(player.perf)
+  );
+  if (player.perf != null) perfTile.title = perfTitle(player);
+  grid.append(perfTile);
   grid.append(tile("Gold", fmtK(player.gold)));
   grid.append(tile("GPM", fmtRate(player.gpm)));
   grid.append(tile("GD@15", player.gd15 == null ? "—" : fmtDiff(player.gd15), diffTone(player.gd15)));
@@ -299,6 +480,38 @@ function fmtDelta(value) {
   if (value > 0) return "+" + abs;
   if (value < 0) return "−" + abs;
   return "0.0";
+}
+
+function fmtPerf(value) {
+  if (value == null || !isFinite(value)) return "—";
+  if (Math.abs(value) < 0.05) return "0.0";
+  return fmtDelta(value);
+}
+
+function perfTone(value) {
+  if (value == null || !isFinite(value) || Math.abs(value) < 0.05) return "";
+  return value > 0 ? "wr-up" : "wr-down";
+}
+
+function perfTitle(player) {
+  if (!player) return "";
+  const bits = [];
+  if (player.perfRole != null) bits.push("vs typical " + player.role + " " + fmtPerf(player.perfRole));
+  if (player.perfChamp != null) bits.push("vs typical " + player.champ + " " + player.role + " " + fmtPerf(player.perfChamp));
+  return bits.join("\n");
+}
+
+function perfCell(player) {
+  const td = node("td", "num");
+  if (!player || player.perf == null) {
+    td.textContent = "—";
+    return td;
+  }
+  const tone = perfTone(player.perf);
+  if (tone) td.className += " " + tone;
+  td.textContent = fmtPerf(player.perf);
+  td.title = perfTitle(player);
+  return td;
 }
 
 function toneClass(value) {
@@ -398,7 +611,7 @@ function firstName(flag, blue, red) {
   return "—";
 }
 
-function renderStats(game) {
+function renderStats(game, roster) {
   const root = els.stats;
   if (!root) return;
   root.innerHTML = "";
@@ -484,7 +697,7 @@ function renderStats(game) {
   const table = node("table", "match-lanes");
   const thead = document.createElement("thead");
   const head = document.createElement("tr");
-  ["Role", "Blue", "KDA", "Dmg", "CS", "GD@15", "Red", "KDA", "Dmg", "CS"].forEach(function (label) {
+  ["Role", "Blue", "KDA", "Perf", "Dmg", "CS", "GD@15", "Red", "KDA", "Perf", "Dmg", "CS"].forEach(function (label) {
     head.append(node("th", "", label));
   });
   thead.append(head);
@@ -500,6 +713,7 @@ function renderStats(game) {
     tr.append(node("td", "pro-role", ROLE_KEYS[i]));
     tr.append(node("td", "", (game.bp[i] || "") + " · " + champName(game.b[i])));
     tr.append(node("td", "num", fmtKda(game.bk[i])));
+    tr.append(perfCell(roster && roster[i]));
     tr.append(node("td", "num", bDmg ? fmtK(bDmg) : "—"));
     tr.append(node("td", "num", bCs || "—"));
     const gd = node("td", "num " + (laneDiff > 0 ? "wr-up" : laneDiff < 0 ? "wr-down" : ""));
@@ -507,6 +721,7 @@ function renderStats(game) {
     tr.append(gd);
     tr.append(node("td", "", (game.rp[i] || "") + " · " + champName(game.r[i])));
     tr.append(node("td", "num", fmtKda(game.rk[i])));
+    tr.append(perfCell(roster && roster[i + 5]));
     tr.append(node("td", "num", rDmg ? fmtK(rDmg) : "—"));
     tr.append(node("td", "num", rCs || "—"));
     tbody.append(tr);
@@ -565,10 +780,18 @@ function renderPicks(root, game, side, roster) {
     const kda = document.createElement("span");
     kda.className = "match-kda";
     kda.textContent = player.k + " / " + player.d + " / " + player.a;
+    const perf = document.createElement("span");
+    const tone = perfTone(player.perf);
+    perf.className = "match-perf" + (tone ? " " + tone : "");
+    perf.textContent = player.perf == null ? "—" : fmtPerf(player.perf);
+    perf.title = perfTitle(player) || "Performance vs typical role / champion";
+    const scores = document.createElement("div");
+    scores.className = "pick-scores";
+    scores.append(kda, perf);
     const role = document.createElement("span");
     role.className = "role-btn";
     role.textContent = player.role;
-    meta.append(name, kda, role);
+    meta.append(name, scores, role);
     slot.append(art, meta);
     slot.addEventListener("mouseenter", function () {
       setHover(player);
@@ -585,6 +808,7 @@ function renderPicks(root, game, side, roster) {
 function render(game) {
   currentGame = game;
   const roster = playersOf(game);
+  attachPerformance(roster);
   const blue = roster.slice(0, 5);
   const red = roster.slice(5, 10);
   mvpPlayer = pickMvp(roster);
@@ -604,7 +828,7 @@ function render(game) {
       ? "MVP · " + (mvpPlayer.name ? mvpPlayer.name + " · " : "") + mvpPlayer.champ
       : "";
   }
-  renderStats(game);
+  renderStats(game, roster);
   renderBans(els.blueBans, game.bb);
   renderBans(els.redBans, game.rb);
   renderPicks(els.bluePicks, game, "blue", blue);

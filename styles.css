@@ -343,7 +343,7 @@ select:hover,
 .team {
   display: grid;
   grid-template-rows: auto auto 1fr;
-  overflow: hidden;
+  overflow: visible;
 }
 
 .team-blue {
@@ -382,10 +382,33 @@ select:hover,
   color: var(--red);
 }
 
+.team-select {
+  flex: 1;
+  min-width: 0;
+}
+
+.team-combo {
+  width: 100%;
+}
+
 .team-name {
-  width: 170px;
+  width: 100%;
   padding: 6px 10px;
   background: transparent;
+}
+
+.team-name.is-org {
+  color: var(--gold-bright);
+}
+
+.team-roster {
+  margin: 4px 2px 0;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .team-name:focus {
@@ -444,6 +467,7 @@ select:hover,
   gap: 8px;
   padding: 0 12px 12px;
   min-height: 0;
+  overflow: auto;
 }
 
 .pick {
@@ -1121,6 +1145,10 @@ select:hover,
   border: 1px solid var(--line-strong);
   border-radius: 10px;
   box-shadow: var(--shadow);
+}
+
+.team-combo .filter-menu {
+  z-index: 12;
 }
 
 .filter-menu button {
@@ -1831,8 +1859,21 @@ select:hover,
   color: var(--muted);
 }
 
+.pick-scores {
+  display: grid;
+  justify-items: end;
+  gap: 1px;
+  flex-shrink: 0;
+}
+
 .pick .match-kda {
   font-size: 12px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.pick .match-perf {
+  font-size: 11px;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
 }

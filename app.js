@@ -5,12 +5,16 @@ const ROLE_KEYS = ["top", "jng", "mid", "adc", "sup"];
 const ROLE_FILTERS = ["All"].concat(ROLES);
 const POWER_PRIOR_GAMES = 4000;
 const SHARP_COUNTER_DELTA = -2;
-const WEIGHT_DEFAULTS = { wr: 0, pop: 1, safety: 0, counter: 1, pairing: 1, unique: 1 };
+const WEIGHT_DEFAULTS = { wr: 1, pop: 1, safety: 1, counter: 1, pairing: 1, unique: 1 };
 const WEIGHT_STORAGE = "riftDraft.weights.v2";
 const PAIR_PRIOR_GAMES = 400;
 const UNIQUE_ROLE_SCALE = 8;
 const ROLE_FILL_LOCK = 0.75;
 const POPULARITY_SCALE = 4.7;
+const TEAM_POP_BLEND = 1;
+const TEAM_COMFORT_SCALE = 0.55;
+const TEAM_RARE_RATE = 0.04;
+const TEAM_RARE_PENALTY = 3.5;
 const ELO_SCALE = 400;
 const ELO_MULT = 10;
 
@@ -24,6 +28,10 @@ const els = {
   gameLabel: document.getElementById("game-label"),
   blueName: document.getElementById("blue-name"),
   redName: document.getElementById("red-name"),
+  blueTeamMenu: document.getElementById("blue-team-menu"),
+  redTeamMenu: document.getElementById("red-team-menu"),
+  blueRoster: document.getElementById("blue-roster"),
+  redRoster: document.getElementById("red-roster"),
   blueBans: document.getElementById("blue-bans"),
   redBans: document.getElementById("red-bans"),
   bluePicks: document.getElementById("blue-picks"),
@@ -83,12 +91,15 @@ let oracles = { matchups: {}, positions: {}, games: 0 };
 let roleRates = {};
 let winrates = { lanes: {} };
 let oePop = {};
+let teamIndex = {};
+let teamNames = [];
 
 let state = emptyState();
 
 function emptyTeam(name) {
   return {
     name,
+    org: "",
     bans: Array(5).fill(null),
     picks: Array(5).fill(null),
     roles: Array(5).fill(null),
@@ -104,6 +115,159 @@ function emptyState() {
     blue: emptyTeam("Blue Side"),
     red: emptyTeam("Red Side"),
   };
+}
+
+function genericName(side) {
+  return side === "red" ? "Red Side" : "Blue Side";
+}
+
+function isGenericName(name) {
+  const n = String(name || "")
+    .trim()
+    .toLowerCase();
+  return !n || n === "blue side" || n === "red side" || n === "blue" || n === "red";
+}
+
+function topWeighted(bag) {
+  let best = "";
+  let bestN = 0;
+  const keys = Object.keys(bag || {});
+  for (let i = 0; i < keys.length; i += 1) {
+    if (bag[keys[i]] > bestN) {
+      bestN = bag[keys[i]];
+      best = keys[i];
+    }
+  }
+  return best;
+}
+
+function emptyRoleBag() {
+  return { players: {}, champs: {}, champWins: {}, n: 0 };
+}
+
+function buildTeamIndex() {
+  teamIndex = {};
+  const games = (window.RIFT_PRO_GAMES && window.RIFT_PRO_GAMES.games) || [];
+  const total = games.length;
+  for (let g = 0; g < total; g += 1) {
+    const game = games[g];
+    const weight = total - g;
+    const sides = [
+      { name: game.bt, champs: game.b, players: game.bp, win: game.w === 1 },
+      { name: game.rt, champs: game.r, players: game.rp, win: game.w === 0 },
+    ];
+    for (let s = 0; s < sides.length; s += 1) {
+      const side = sides[s];
+      if (!side.name) continue;
+      const rec =
+        teamIndex[side.name] ||
+        (teamIndex[side.name] = {
+          name: side.name,
+          n: 0,
+          league: "",
+          roles: {
+            top: emptyRoleBag(),
+            jng: emptyRoleBag(),
+            mid: emptyRoleBag(),
+            adc: emptyRoleBag(),
+            sup: emptyRoleBag(),
+          },
+          starters: {},
+        });
+      rec.n += 1;
+      if (game.l) rec.league = game.l;
+      for (let i = 0; i < 5; i += 1) {
+        const role = ROLE_KEYS[i];
+        const bag = rec.roles[role];
+        bag.n += 1;
+        const player = side.players && side.players[i];
+        const champ = side.champs && side.champs[i];
+        if (player) bag.players[player] = (bag.players[player] || 0) + weight;
+        if (champ) {
+          bag.champs[champ] = (bag.champs[champ] || 0) + 1;
+          if (side.win) bag.champWins[champ] = (bag.champWins[champ] || 0) + 1;
+        }
+      }
+    }
+  }
+  teamNames = Object.keys(teamIndex).sort(function (a, b) {
+    return a.localeCompare(b);
+  });
+  for (let i = 0; i < teamNames.length; i += 1) {
+    const rec = teamIndex[teamNames[i]];
+    for (let r = 0; r < ROLE_KEYS.length; r += 1) {
+      rec.starters[ROLE_KEYS[r]] = topWeighted(rec.roles[ROLE_KEYS[r]].players);
+    }
+  }
+}
+
+function orgOf(side) {
+  const name = state[side] && state[side].org;
+  return (name && teamIndex[name]) || null;
+}
+
+function findTeam(raw) {
+  const q = String(raw || "").trim().toLowerCase();
+  if (!q || isGenericName(q)) return "";
+  let prefix = "";
+  let prefixN = 0;
+  for (let i = 0; i < teamNames.length; i += 1) {
+    const name = teamNames[i];
+    const low = name.toLowerCase();
+    if (low === q) return name;
+    if (low.indexOf(q) === 0) {
+      prefix = name;
+      prefixN += 1;
+    }
+  }
+  return prefixN === 1 ? prefix : "";
+}
+
+function searchTeams(raw, limit) {
+  const q = String(raw || "").trim().toLowerCase();
+  const out = [];
+  if (!q || isGenericName(q)) {
+    for (let i = 0; i < teamNames.length && out.length < (limit || 12); i += 1) out.push(teamNames[i]);
+    return out;
+  }
+  for (let i = 0; i < teamNames.length; i += 1) {
+    if (teamNames[i].toLowerCase().indexOf(q) === -1) continue;
+    out.push(teamNames[i]);
+    if (out.length >= (limit || 12)) break;
+  }
+  return out;
+}
+
+function setSideOrg(side, orgName) {
+  const team = state[side];
+  if (!team) return;
+  if (!orgName || !teamIndex[orgName]) {
+    team.org = "";
+    team.name = genericName(side);
+    return;
+  }
+  team.org = orgName;
+  team.name = orgName;
+}
+
+function commitSideName(side) {
+  const input = side === "blue" ? els.blueName : els.redName;
+  if (!input) return;
+  const raw = input.value;
+  if (isGenericName(raw)) {
+    setSideOrg(side, "");
+    input.value = genericName(side);
+    return;
+  }
+  const hit = findTeam(raw);
+  if (hit) {
+    setSideOrg(side, hit);
+    input.value = hit;
+    return;
+  }
+  state[side].org = "";
+  state[side].name = raw.trim() || genericName(side);
+  input.value = state[side].name;
 }
 
 function portrait(id) {
@@ -185,13 +349,31 @@ function inferredSlotRole(id) {
   return primary ? primary.toUpperCase() : null;
 }
 
+function champOeRoleShare(id, role) {
+  const key = String(role || "").toLowerCase();
+  if (!key) return 0;
+  const info = roleRates[id];
+  if (info && info.rates) return info.rates[key] || 0;
+  let total = 0;
+  let n = 0;
+  for (let i = 0; i < ROLE_KEYS.length; i += 1) {
+    const count = oePicks(id, ROLE_KEYS[i]);
+    total += count;
+    if (ROLE_KEYS[i] === key) n = count;
+  }
+  return total ? n / total : 0;
+}
+
 function champFitsRole(id, role) {
   if (!role || role === "All") return true;
   const key = role.toLowerCase();
   const info = roleRates[id];
-  if (info && (info.primary === key || info.rates[key] >= 0.1)) return true;
+  if (info && info.primary === key) return true;
+  const share = champOeRoleShare(id, key);
+  if (share >= 0.12) return true;
+  if (info || share > 0) return false;
   const entry = winrateEntry(id, key);
-  if (entry && ((entry.lane_pct || 0) >= 10 || primaryWinrateRole(id) === key)) return true;
+  if (entry && ((entry.lane_pct || 0) >= 25 || primaryWinrateRole(id) === key)) return true;
   return false;
 }
 
@@ -476,6 +658,40 @@ function teamPickRows(side) {
   return rows;
 }
 
+function lineupFor(side) {
+  const team = state[side];
+  const org = orgOf(side);
+  const byRole = {};
+  const extra = [];
+  for (let i = 0; i < 5; i += 1) {
+    const id = team.picks[i];
+    if (!id) continue;
+    const assigned = team.roles[i] || inferredSlotRole(id) || "";
+    const role = assigned.toLowerCase();
+    const row = {
+      id: id,
+      role: role,
+      name: (org && role && org.starters[role]) || "",
+    };
+    if (role && ROLE_KEYS.indexOf(role) !== -1 && !byRole[role]) byRole[role] = row;
+    else extra.push(row);
+  }
+  if (org) {
+    for (let i = 0; i < ROLE_KEYS.length; i += 1) {
+      const role = ROLE_KEYS[i];
+      if (byRole[role]) continue;
+      const player = org.starters[role];
+      if (!player) continue;
+      byRole[role] = { role: role, name: player };
+    }
+  }
+  const rows = [];
+  for (let i = 0; i < ROLE_KEYS.length; i += 1) {
+    if (byRole[ROLE_KEYS[i]]) rows.push(byRole[ROLE_KEYS[i]]);
+  }
+  return rows.concat(extra);
+}
+
 function expectLaneWeight(us, them, usRole, themRole) {
   if (usRole && themRole) {
     return usRole.toLowerCase() === themRole.toLowerCase() ? 1 : 0.2;
@@ -545,14 +761,33 @@ function teamCounter(usRows, themRows) {
 }
 
 function draftExpect() {
-  const blue = teamPickRows("blue");
-  const red = teamPickRows("red");
-  if (!blue.length || !red.length) {
+  const bluePicks = teamPickRows("blue");
+  const redPicks = teamPickRows("red");
+  const hasDraft = bluePicks.length > 0 && redPicks.length > 0;
+  const hasTeams = !!(state.blue.org && state.red.org);
+  const predict = window.RIFT_PREDICT;
+  if (predict && predict.matchPredict && (hasDraft || hasTeams)) {
+    const rec = predict.matchPredict(lineupFor("blue"), lineupFor("red"));
+    return {
+      ready: true,
+      blue: rec.blue,
+      red: rec.red,
+      elo: rec.elo,
+      draft: rec.draft,
+      team: rec.team,
+      comfort: rec.comfort,
+      counter: rec.counter,
+      pairing: rec.pairing,
+      hasDraft: hasDraft,
+      hasTeams: hasTeams,
+    };
+  }
+  if (!hasDraft) {
     return { ready: false, blue: 50, red: 50, counter: 0, pairing: 0, elo: 0 };
   }
-  const counter = teamCounter(blue, red);
-  const pairBlue = teamPairing(blue);
-  const pairRed = teamPairing(red);
+  const counter = teamCounter(bluePicks, redPicks);
+  const pairBlue = teamPairing(bluePicks);
+  const pairRed = teamPairing(redPicks);
   const pairingDelta = pairBlue.delta - pairRed.delta;
   const elo = (counter.elo + pairBlue.elo - pairRed.elo) * ELO_MULT;
   const p = expectedFromElo(elo);
@@ -563,6 +798,8 @@ function draftExpect() {
     counter: counter.delta,
     pairing: pairingDelta,
     elo: elo,
+    hasDraft: true,
+    hasTeams: false,
   };
 }
 
@@ -581,35 +818,47 @@ function renderExpect() {
   els.expectRedPct.textContent = rec.red.toFixed(1) + "%";
   if (els.expectFill) els.expectFill.style.width = rec.blue.toFixed(1) + "%";
   if (!rec.ready) {
-    els.expectSub.textContent = "Drop picks on both sides to estimate win%";
-    if (els.expectMeter) els.expectMeter.title = "Expected win% from counters and pairings";
+    els.expectSub.textContent =
+      state.blue.org || state.red.org
+        ? "Select both teams or drop picks to estimate win%"
+        : "Drop picks on both sides to estimate win%";
+    if (els.expectMeter) els.expectMeter.title = "Expected win% from draft, teams, and comfort";
     return;
   }
-  els.expectSub.innerHTML =
-    "Elo <span class=\"" +
-    toneClass(rec.elo) +
-    "\">" +
-    formatDelta(rec.elo) +
-    "</span> · counter <span class=\"" +
-    toneClass(rec.counter) +
-    "\">" +
-    formatDelta(rec.counter) +
-    "</span> · pairing <span class=\"" +
-    toneClass(rec.pairing) +
-    "\">" +
-    formatDelta(rec.pairing) +
-    "</span>";
+  const bits = [
+    "Elo <span class=\"" + toneClass(rec.elo) + "\">" + formatDelta(rec.elo) + "</span>",
+  ];
+  if (rec.hasDraft) {
+    if (rec.draft != null) {
+      bits.push("draft <span class=\"" + toneClass(rec.draft) + "\">" + formatDelta(rec.draft) + "</span>");
+    } else {
+      bits.push(
+        "counter <span class=\"" +
+          toneClass(rec.counter) +
+          "\">" +
+          formatDelta(rec.counter) +
+          "</span> · pairing <span class=\"" +
+          toneClass(rec.pairing) +
+          "\">" +
+          formatDelta(rec.pairing) +
+          "</span>"
+      );
+    }
+  }
+  if (rec.hasTeams && rec.team != null) {
+    bits.push("teams <span class=\"" + toneClass(rec.team) + "\">" + formatDelta(rec.team) + "</span>");
+  }
+  if (rec.comfort) {
+    bits.push("comfort <span class=\"" + toneClass(rec.comfort) + "\">" + formatDelta(rec.comfort) + "</span>");
+  }
+  els.expectSub.innerHTML = bits.join(" · ");
   if (els.expectMeter) {
     els.expectMeter.title =
       (state.blue.name || "Blue") +
       " " +
       rec.blue.toFixed(1) +
-      "% · Elo " +
-      formatDelta(rec.elo) +
-      " · counter " +
-      formatDelta(rec.counter) +
-      " · pairing " +
-      formatDelta(rec.pairing);
+      "% · " +
+      els.expectSub.textContent;
   }
 }
 
@@ -655,7 +904,6 @@ function scoreChampion(id, enemies, allies) {
       weighted: entry.delta * conf,
     });
   }
-  if (!parts.length && !pairs.length && !blind) return null;
   let counter = 0;
   for (let i = 0; i < parts.length; i += 1) counter += parts[i].weighted;
   let pairing = 0;
@@ -663,13 +911,60 @@ function scoreChampion(id, enemies, allies) {
   const roles = roleConflict(id, filledRoles());
   const unique = -UNIQUE_ROLE_SCALE * roles.overlap;
   const base = blind ? blind.score : 0;
+  const role = (power && power.role) || powerRoleFor(id);
+  const org = orgOf(recSide);
+  let teamPop = 0;
+  let teamPicks = 0;
+  let teamN = 0;
+  let comfort = 0;
+  let comfortPlayer = "";
+  if (org && role && org.roles[role]) {
+    teamN = org.roles[role].n || 0;
+    teamPicks = org.roles[role].champs[id] || 0;
+    if (teamN >= 3) {
+      teamPop = POPULARITY_SCALE * (teamPicks / (teamPicks + Math.max(2, teamN * 0.05)));
+    }
+    comfortPlayer = org.starters[role] || "";
+    if (comfortPlayer && window.RIFT_PREDICT && window.RIFT_PREDICT.champResidual) {
+      const z = window.RIFT_PREDICT.champResidual(comfortPlayer, role, id);
+      if (z != null) comfort = z * TEAM_COMFORT_SCALE;
+    }
+  }
+  const leaguePop = blind ? blind.popularity : 0;
+  const popShift = org && teamN >= 3 ? weights.pop * TEAM_POP_BLEND * (teamPop - leaguePop) : 0;
+  let rare = 0;
+  let teamWr = 0;
+  if (org && teamN >= 8) {
+    const rate = teamPicks / teamN;
+    if (!teamPicks) rare = TEAM_RARE_PENALTY;
+    else if (rate < TEAM_RARE_RATE && teamPicks < 4) {
+      rare = TEAM_RARE_PENALTY * (1 - Math.min(1, rate / TEAM_RARE_RATE));
+    }
+  }
+  if (org && role && teamPicks >= 6) {
+    const wins = (org.roles[role].champWins && org.roles[role].champWins[id]) || 0;
+    const conf = teamPicks / (teamPicks + 10);
+    const teamPower = (wins / teamPicks - 0.5) * 100 * conf;
+    const leaguePower = power ? power.power : 0;
+    teamWr = weights.wr * (teamPower - leaguePower);
+  }
+  rare *= weights.pop;
+  if (!parts.length && !pairs.length && !blind && !popShift && !comfort && !rare && !teamWr) return null;
   return {
-    avg: base + weights.counter * counter + weights.pairing * pairing + weights.unique * unique,
+    avg: base + weights.counter * counter + weights.pairing * pairing + weights.unique * unique + popShift + comfort + teamWr - rare,
     power: power,
     blind: blind,
     counter: counter,
     pairing: pairing,
     unique: unique,
+    teamPop: popShift,
+    teamWr: teamWr,
+    teamRare: rare,
+    teamPicks: teamPicks,
+    teamN: teamN,
+    teamName: org ? org.name : "",
+    comfort: comfort,
+    comfortPlayer: comfortPlayer,
     roles: roles,
     parts: parts,
     pairs: pairs,
@@ -681,6 +976,7 @@ function recommendedPicks() {
   const allies = allyIds();
   const taken = takenIds();
   const filled = filledRoles();
+  const org = orgOf(recSide);
   const recs = [];
   for (let i = 0; i < champions.length; i += 1) {
     const champ = champions[i];
@@ -688,6 +984,10 @@ function recommendedPicks() {
     if (tag !== "All" && champ.tags.indexOf(tag) === -1) continue;
     if (!champFitsRole(champ.id, recRole)) continue;
     if (recRole === "All" && roleTaken(pickPrimaryRole(champ.id), filled)) continue;
+    if (org && recRole !== "All") {
+      const bag = org.roles[recRole.toLowerCase()];
+      if (bag && bag.n >= 8 && !(bag.champs[champ.id] > 0)) continue;
+    }
     const score = scoreChampion(champ.id, enemies, allies);
     if (!score) continue;
     recs.push({
@@ -698,6 +998,14 @@ function recommendedPicks() {
       counter: score.counter,
       pairing: score.pairing,
       unique: score.unique,
+      teamPop: score.teamPop,
+      teamWr: score.teamWr,
+      teamRare: score.teamRare,
+      teamPicks: score.teamPicks,
+      teamN: score.teamN,
+      teamName: score.teamName,
+      comfort: score.comfort,
+      comfortPlayer: score.comfortPlayer,
       roles: score.roles,
       parts: score.parts,
       pairs: score.pairs,
@@ -846,6 +1154,32 @@ function scoreTooltip(champ, score) {
         ")"
     );
   }
+  if (score.teamName && (score.teamPop || score.teamN)) {
+    lines.push(
+      "team  " +
+        score.teamName +
+        "  " +
+        formatDelta(score.teamPop) +
+        "  (" +
+        (score.teamPicks || 0) +
+        " / " +
+        (score.teamN || 0) +
+        " " +
+        roleLabel((score.power && score.power.role) || "") +
+        ")"
+    );
+  }
+  if (score.teamWr) {
+    lines.push("team form  " + formatDelta(score.teamWr) + "  (their games on " + champ.name + ")");
+  }
+  if (score.teamRare) {
+    lines.push("team rare  " + formatDelta(-score.teamRare) + "  (almost never picked here)");
+  }
+  if (score.comfortPlayer && score.comfort) {
+    lines.push(
+      score.comfortPlayer + "  " + formatDelta(score.comfort) + " on " + champ.name
+    );
+  }
   return lines.join("\n");
 }
 
@@ -982,6 +1316,8 @@ function resetGame() {
     usedPicks: state.usedPicks,
     blueName: state.blue.name,
     redName: state.red.name,
+    blueOrg: state.blue.org,
+    redOrg: state.red.org,
   };
   state = emptyState();
   state.fearless = keep.fearless;
@@ -990,6 +1326,8 @@ function resetGame() {
   state.usedPicks = keep.usedPicks;
   state.blue.name = keep.blueName;
   state.red.name = keep.redName;
+  state.blue.org = keep.blueOrg;
+  state.red.org = keep.redOrg;
   render();
 }
 
@@ -1034,6 +1372,7 @@ function visibleChampions() {
   const query = search.trim().toLowerCase().replace(/['.\s]/g, "");
   return champions.filter(function (champ) {
     if (tag !== "All" && champ.tags.indexOf(tag) === -1) return false;
+    if (!champFitsRole(champ.id, recRole)) return false;
     if (!query) return true;
     const hay = (champ.name + champ.id + champ.key).toLowerCase().replace(/['.\s]/g, "");
     return hay.indexOf(query) !== -1;
@@ -1151,7 +1490,10 @@ function renderGrid() {
   if (!visible.length) {
     const empty = document.createElement("p");
     empty.className = "pick-empty";
-    empty.textContent = "No champions match that search.";
+    empty.textContent =
+      recRole !== "All"
+        ? "No " + recRole + " champions match that search."
+        : "No champions match that search.";
     els.grid.append(empty);
     return;
   }
@@ -1216,7 +1558,9 @@ function renderRecs() {
   } else if (allies.length) {
     els.recsLabel.textContent = "Best " + roleBit + "with " + ourName;
   } else {
-    els.recsLabel.textContent = recRole === "All" ? "Blind picks" : "Blind " + recRole;
+    const org = orgOf(recSide);
+    els.recsLabel.textContent =
+      (recRole === "All" ? "Blind picks" : "Blind " + recRole) + (org ? " · " + org.name : "");
   }
   els.recsList.innerHTML = "";
   const top = recs.slice(0, 8);
@@ -1276,9 +1620,129 @@ function renderUsed() {
   }
 }
 
+function renderRoster(side) {
+  const el = side === "blue" ? els.blueRoster : els.redRoster;
+  const input = side === "blue" ? els.blueName : els.redName;
+  if (!el) return;
+  const org = orgOf(side);
+  if (input) input.classList.toggle("is-org", !!org);
+  if (!org) {
+    el.hidden = true;
+    el.textContent = "";
+    return;
+  }
+  const names = [];
+  const tips = [];
+  for (let i = 0; i < ROLE_KEYS.length; i += 1) {
+    const player = org.starters[ROLE_KEYS[i]];
+    if (!player) continue;
+    names.push(player);
+    tips.push(ROLE_KEYS[i].toUpperCase() + " " + player);
+  }
+  el.hidden = !names.length;
+  el.textContent = names.join(" · ");
+  el.title = tips.join(" · ");
+}
+
+function hideMenu(menu) {
+  if (!menu) return;
+  menu.hidden = true;
+  menu.innerHTML = "";
+}
+
+function fillMenu(menu, items, renderItem, onPick) {
+  menu.innerHTML = "";
+  if (!items.length) {
+    menu.hidden = true;
+    return;
+  }
+  for (let i = 0; i < items.length; i += 1) {
+    const item = items[i];
+    const button = document.createElement("button");
+    button.type = "button";
+    renderItem(button, item);
+    button.addEventListener("mousedown", function (event) {
+      event.preventDefault();
+    });
+    button.addEventListener("click", function () {
+      onPick(item);
+    });
+    menu.append(button);
+  }
+  menu.hidden = false;
+}
+
+function renderTeamMenu(side) {
+  const input = side === "blue" ? els.blueName : els.redName;
+  const menu = side === "blue" ? els.blueTeamMenu : els.redTeamMenu;
+  if (!input || !menu) return;
+  const q = input.value;
+  const hits = searchTeams(q, 12);
+  const items = [];
+  if (!isGenericName(q) || state[side].org) {
+    items.push({ name: genericName(side), clear: true });
+  }
+  for (let i = 0; i < hits.length; i += 1) items.push({ name: hits[i], clear: false });
+  fillMenu(
+    menu,
+    items,
+    function (button, item) {
+      button.textContent = item.clear ? item.name + " — no team data" : item.name;
+      if (item.clear) button.style.color = "var(--muted)";
+    },
+    function (item) {
+      setSideOrg(side, item.clear ? "" : item.name);
+      input.value = state[side].name;
+      hideMenu(menu);
+      render();
+    }
+  );
+}
+
+function bindTeamCombo(side) {
+  const input = side === "blue" ? els.blueName : els.redName;
+  const menu = side === "blue" ? els.blueTeamMenu : els.redTeamMenu;
+  if (!input) return;
+  input.addEventListener("input", function () {
+    renderTeamMenu(side);
+  });
+  input.addEventListener("focus", function () {
+    if (isGenericName(input.value)) input.select();
+    renderTeamMenu(side);
+  });
+  input.addEventListener("blur", function () {
+    setTimeout(function () {
+      hideMenu(menu);
+      commitSideName(side);
+      render();
+    }, 120);
+  });
+  input.addEventListener("keydown", function (event) {
+    if (event.key === "Escape") {
+      setSideOrg(side, "");
+      input.value = genericName(side);
+      hideMenu(menu);
+      render();
+      input.blur();
+      return;
+    }
+    if (event.key !== "Enter") return;
+    event.preventDefault();
+    const hits = searchTeams(input.value, 1);
+    if (hits.length && !isGenericName(input.value)) setSideOrg(side, hits[0]);
+    else commitSideName(side);
+    input.value = state[side].name;
+    hideMenu(menu);
+    render();
+    input.blur();
+  });
+}
+
 function render() {
-  els.blueName.value = state.blue.name;
-  els.redName.value = state.red.name;
+  if (document.activeElement !== els.blueName) els.blueName.value = state.blue.name;
+  if (document.activeElement !== els.redName) els.redName.value = state.red.name;
+  renderRoster("blue");
+  renderRoster("red");
   els.fearless.checked = state.fearless;
   els.series.value = String(state.seriesLength);
   els.gameLabel.textContent = "Game " + (state.gameIndex + 1) + " / " + state.seriesLength;
@@ -1393,15 +1857,11 @@ function bindWeights() {
 
 function bind() {
   bindWeights();
+  bindTeamCombo("blue");
+  bindTeamCombo("red");
   els.search.addEventListener("input", function () {
     search = els.search.value;
     renderGrid();
-  });
-  els.blueName.addEventListener("input", function () {
-    state.blue.name = els.blueName.value;
-  });
-  els.redName.addEventListener("input", function () {
-    state.red.name = els.redName.value;
   });
   els.fearless.addEventListener("change", function () {
     state.fearless = els.fearless.checked;
@@ -1507,6 +1967,7 @@ function boot() {
     winrates = window.RIFT_WINRATES || { lanes: {} };
     if (!winrates.lanes) winrates.lanes = {};
     rebuildChampGames();
+    buildTeamIndex();
     if (els.bootStatus) els.bootStatus.textContent = "Loading match data…";
     loadOracles()
       .then(function () {
