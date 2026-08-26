@@ -449,18 +449,16 @@ function renderTeamDirectory() {
   document.title = "Teams — Whisper Draft";
   const rows = teamDirectory();
   teamEls.range.textContent = rows.length.toLocaleString() + " teams";
+  if (dirSort === "draft") {
+    dirSort = "vs";
+    dirDir = -1;
+  }
   setHead(
     teamEls.head,
     [
       { key: "name", label: "Team" },
       { key: "vs", label: "True score", num: true },
       { key: "score", label: "Score", num: true },
-      {
-        key: "draft",
-        label: "Drafting score",
-        num: true,
-        title: "Blind Picks mix vs other teams in this filter. Counters and pairings are weighted 1.25×.",
-      },
       { key: "league", label: "League" },
       { key: "champ", label: "Pool" },
       { key: "games", label: "Games", num: true },
@@ -483,7 +481,7 @@ function renderTeamDirectory() {
     }
   );
   if (!rows.length) {
-    emptyRow(teamEls.body, 13, "No teams match that filter.");
+    emptyRow(teamEls.body, 12, "No teams match that filter.");
     return;
   }
   teamEls.body.innerHTML = "";
@@ -506,10 +504,6 @@ function renderTeamDirectory() {
     const score = document.createElement("td");
     score.className = "num " + scoreTone(row.score);
     score.textContent = fmtScore(row.score);
-    const draft = document.createElement("td");
-    draft.className = "num " + scoreTone(row.draft);
-    draft.textContent = fmtScore(row.draft);
-    draft.title = draftTip(row.draftRec);
     const leagueCell = document.createElement("td");
     leagueCell.textContent = row.league || "—";
     const pool = document.createElement("td");
@@ -535,7 +529,7 @@ function renderTeamDirectory() {
     const kda = document.createElement("td");
     kda.className = "num";
     kda.textContent = fmtRate(row.kda);
-    tr.append(name, vs, score, draft, leagueCell, pool, games, wr, gd, fb, ft, fd, kda);
+    tr.append(name, vs, score, leagueCell, pool, games, wr, gd, fb, ft, fd, kda);
     teamEls.body.append(tr);
   }
 }

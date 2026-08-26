@@ -1991,12 +1991,8 @@ select:hover,
 }
 
 .player-layout.is-team .player-board {
-  grid-template-columns: minmax(0, 1fr);
-  grid-template-rows: auto minmax(0, 1fr);
-}
-
-.player-layout.is-team .pro-main {
-  grid-template-rows: auto auto;
+  grid-template-columns: minmax(0, 1fr) minmax(380px, 460px);
+  grid-template-rows: minmax(0, 1fr);
 }
 
 .player-layout.is-team #team-side.pro-side {
