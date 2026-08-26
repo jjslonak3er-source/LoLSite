@@ -254,10 +254,10 @@ function teamDraftScore(teamName, games) {
 }
 
 function draftTip(rec) {
-  if (!rec) return "How well this team drafts, using the Blind Picks mix (counters and pairings ×1.25)";
+  if (!rec) return "How well this team drafts vs other teams in this filter. Blind Picks mix, counters and pairings ×1.25.";
   const w = rec.weights || {};
   return (
-    "Blind Picks mix over " +
+    "Vs other teams in this filter · " +
     rec.n +
     " drafts · wr " +
     fmtScore(rec.wr) +
@@ -284,6 +284,34 @@ function draftTip(rec) {
     " ×" +
     Number(w.unique || 1).toFixed(2)
   );
+}
+
+function centerDraftScores(rows) {
+  const keys = ["score", "wr", "pop", "safety", "counter", "pairing", "unique"];
+  const means = {};
+  for (let k = 0; k < keys.length; k += 1) {
+    const key = keys[k];
+    let sum = 0;
+    let n = 0;
+    for (let i = 0; i < rows.length; i += 1) {
+      const rec = rows[i].draftRec;
+      if (!rec || rec[key] == null || !isFinite(rec[key])) continue;
+      sum += rec[key];
+      n += 1;
+    }
+    means[key] = n ? sum / n : 0;
+  }
+  for (let i = 0; i < rows.length; i += 1) {
+    const rec = rows[i].draftRec;
+    if (!rec) {
+      rows[i].draft = null;
+      continue;
+    }
+    for (let k = 0; k < keys.length; k += 1) {
+      rec[keys[k]] -= means[keys[k]];
+    }
+    rows[i].draft = rec.score;
+  }
 }
 
 function teamDirectory() {
@@ -315,6 +343,7 @@ function teamDirectory() {
       rec: rec,
     });
   }
+  centerDraftScores(out);
   return sortRows(out, dirSort, dirDir);
 }
 
@@ -412,6 +441,7 @@ function openPlayer(name) {
 
 function renderTeamDirectory() {
   teamEls.layout.classList.add("is-directory");
+  teamEls.layout.classList.remove("is-team");
   teamEls.summary.hidden = true;
   teamEls.side.hidden = true;
   teamEls.boardTitle.textContent = "Teams";
@@ -429,7 +459,7 @@ function renderTeamDirectory() {
         key: "draft",
         label: "Drafting score",
         num: true,
-        title: "Blind Picks mix on their drafts. Counters and pairings are weighted 1.25×.",
+        title: "Blind Picks mix vs other teams in this filter. Counters and pairings are weighted 1.25×.",
       },
       { key: "league", label: "League" },
       { key: "champ", label: "Pool" },
@@ -520,11 +550,20 @@ function renderTeamDetail() {
     return;
   }
   teamEls.layout.classList.remove("is-directory");
+  teamEls.layout.classList.add("is-team");
   const n = rec.games.length;
   const roster = rosterRows(rec);
   const score = teamScore(rec.name, rec.games);
   const trueScore = rosterTrueScore(roster);
-  const draftRec = teamDraftScore(rec.name, rec.games);
+  const dir = teamDirectory();
+  let draftRec = null;
+  let draftScore = null;
+  for (let i = 0; i < dir.length; i += 1) {
+    if (dir[i].name !== rec.name) continue;
+    draftRec = dir[i].draftRec;
+    draftScore = dir[i].draft;
+    break;
+  }
   const wr = n ? rec.wins / n : 0;
   teamEls.title.textContent = rec.name;
   document.title = rec.name + " — Team stats";
@@ -534,7 +573,7 @@ function renderTeamDetail() {
   teamEls.summary.append(tile("League", mostCommon(rec.leagues) || "—"));
   teamEls.summary.append(tile("True score", fmtScore(trueScore), scoreTone(trueScore)));
   teamEls.summary.append(tile("Score", fmtScore(score), scoreTone(score)));
-  const draftTile = tile("Drafting score", fmtScore(draftRec && draftRec.score), scoreTone(draftRec && draftRec.score));
+  const draftTile = tile("Drafting score", fmtScore(draftScore), scoreTone(draftScore));
   draftTile.title = draftTip(draftRec);
   teamEls.summary.append(draftTile);
   teamEls.summary.append(tile("Games", n.toLocaleString()));
@@ -616,7 +655,7 @@ function renderTeamDetail() {
     }
   }
 
-  const shown = rec.games.slice(0, 40);
+  const shown = rec.games || [];
   teamEls.side.hidden = false;
   teamEls.gamesSub.textContent = shown.length + " games";
   teamEls.gamesBody.innerHTML = "";

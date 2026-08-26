@@ -1990,6 +1990,19 @@ select:hover,
   grid-template-columns: 1fr;
 }
 
+.player-layout.is-team .player-board {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
+.player-layout.is-team .pro-main {
+  grid-template-rows: auto auto;
+}
+
+.player-layout.is-team #team-side.pro-side {
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
 #player-side.pro-side {
   grid-template-rows: auto minmax(0, 1fr);
 }
