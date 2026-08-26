@@ -2238,8 +2238,8 @@ function trueScoreChart(points, roleKey) {
     return wrap;
   }
   const w = 280;
-  const h = 72;
-  const pad = { t: 6, r: 8, b: 6, l: 8 };
+  const h = 48;
+  const pad = { t: 4, r: 6, b: 4, l: 6 };
   let min = 0;
   let max = 0;
   for (let i = 0; i < usable.length; i += 1) {
