@@ -29,6 +29,7 @@ const LEGACY_WEIGHT_STORAGE_V2 = "riftDraft.weights.v2";
 const PAIR_PRIOR_GAMES = 400;
 const UNIQUE_ROLE_SCALE = 8;
 const UNIQUE_PRIMARY_SCALE = 0.4;
+const RESPONSE_ROLE_BASE = 4;
 const ROLE_FILL_LOCK = 0.75;
 const POPULARITY_SCALE = 4.7;
 const TEAM_POP_BLEND = 1;
@@ -681,6 +682,12 @@ function roleConflict(id, filled) {
   return { overlap: overlap, hits: hits };
 }
 
+function responseRoleFit(rates, role) {
+  if (role === "adc") return Math.min(1, (rates.adc || 0) + 0.8 * (rates.sup || 0));
+  if (role === "sup") return Math.min(1, (rates.sup || 0) + 0.8 * (rates.adc || 0));
+  return rates[role] || 0;
+}
+
 function roleResponse(id) {
   const other = recSide === "blue" ? "red" : "blue";
   const enemyTeam = state[other];
@@ -690,9 +697,10 @@ function roleResponse(id) {
     const enemy = enemyTeam.picks[i];
     if (!enemy) continue;
     const role = (enemyTeam.roles[i] || pickPrimaryRole(enemy) || "").toLowerCase();
-    const fit = rates[role] || 0;
+    const fit = responseRoleFit(rates, role);
     if (!fit) continue;
     const delta = matchupDelta(id, enemy);
+    response += RESPONSE_ROLE_BASE * fit;
     if (delta != null) response += delta * fit;
   }
   return response;
@@ -701,9 +709,10 @@ function roleResponse(id) {
 function botResponseFactor() {
   if (!chartOpen || chartStage !== "play" || !chartYou) return 1;
   const playerPicks = state[chartYou].picks.filter(Boolean).length;
-  if (playerPicks <= 1) return 0.1;
-  if (playerPicks === 2) return 0.35;
-  if (playerPicks === 3) return 0.65;
+  if (!playerPicks) return 0;
+  if (playerPicks === 1) return 0.8;
+  if (playerPicks === 2) return 0.45;
+  if (playerPicks === 3) return 0.7;
   return 1;
 }
 
