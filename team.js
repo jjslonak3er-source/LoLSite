@@ -311,6 +311,60 @@ function identityDetailTable(counts, wins, rolesByChamp) {
   return table;
 }
 
+function addCountMap(into, from) {
+  const keys = Object.keys(from || {});
+  for (let i = 0; i < keys.length; i += 1) {
+    const key = keys[i];
+    into[key] = (into[key] || 0) + (from[key] || 0);
+  }
+}
+
+function mergeSlotStats(stats, slots) {
+  const counts = {};
+  const wins = {};
+  const roles = {};
+  const champRoles = {};
+  for (let i = 0; i < slots.length; i += 1) {
+    const s = slots[i];
+    addCountMap(counts, stats.order[s]);
+    addCountMap(wins, stats.orderWins[s]);
+    addCountMap(roles, stats.orderRoles[s]);
+    const byChamp = stats.orderChampRoles[s] || {};
+    const ids = Object.keys(byChamp);
+    for (let j = 0; j < ids.length; j += 1) {
+      const id = ids[j];
+      champRoles[id] = champRoles[id] || {};
+      addCountMap(champRoles[id], byChamp[id]);
+    }
+  }
+  return { counts: counts, wins: wins, roles: roles, champRoles: champRoles };
+}
+
+function pickOrderGroups() {
+  if (teamPick === "first") {
+    return [
+      { label: "Pick 1", slots: [0] },
+      { label: "Picks 2–3", slots: [1, 2] },
+      { label: "Picks 4–5", slots: [3, 4] },
+    ];
+  }
+  if (teamPick === "second") {
+    return [
+      { label: "Picks 1–2", slots: [0, 1] },
+      { label: "Pick 3", slots: [2] },
+      { label: "Pick 4", slots: [3] },
+      { label: "Pick 5", slots: [4] },
+    ];
+  }
+  return [
+    { label: "Pick 1", slots: [0] },
+    { label: "Pick 2", slots: [1] },
+    { label: "Pick 3", slots: [2] },
+    { label: "Pick 4", slots: [3] },
+    { label: "Pick 5", slots: [4] },
+  ];
+}
+
 function identityExpandable(label, counts, wins, extra, colSpan, rolesByChamp) {
   const frag = document.createDocumentFragment();
   const summary = identityChampRow(label, counts, wins, extra);
@@ -1008,12 +1062,15 @@ function renderTeamIdentity(rec) {
 
   if (stats.orderN) {
     const orderRows = [];
-    for (let s = 0; s < 5; s += 1) {
+    const groups = pickOrderGroups();
+    for (let i = 0; i < groups.length; i += 1) {
+      const group = groups[i];
+      const merged = mergeSlotStats(stats, group.slots);
       const roleCell = document.createElement("td");
       roleCell.className = "pro-role";
-      roleCell.textContent = (mostCommon(stats.orderRoles[s]) || "—").toUpperCase();
+      roleCell.textContent = (mostCommon(merged.roles) || "—").toUpperCase();
       orderRows.push(
-        identityExpandable("Pick " + (s + 1), stats.order[s], stats.orderWins[s], roleCell, 6, stats.orderChampRoles[s])
+        identityExpandable(group.label, merged.counts, merged.wins, roleCell, 6, merged.champRoles)
       );
     }
     body.append(
