@@ -1258,10 +1258,10 @@ function renderTeamIdentity(rec) {
   banHead.textContent = "Ban identity";
   const weBan = document.createElement("p");
   weBan.className = "muted identity-ban-label";
-  weBan.textContent = "We ban";
+  weBan.textContent = rec.name + " ban";
   const vsBan = document.createElement("p");
   vsBan.className = "muted identity-ban-label";
-  vsBan.textContent = "Banned against us";
+  vsBan.textContent = "Banned against " + rec.name;
   banBlock.append(banHead, weBan, simpleStrip(topKeys(stats.bans, 8)), vsBan, simpleStrip(topKeys(stats.enemyBans, 8)));
   body.append(banBlock);
 }
