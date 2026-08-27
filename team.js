@@ -146,11 +146,14 @@ function teamIdentity(teamName, games) {
   const orderRoles = [{}, {}, {}, {}, {}];
   const orderChampRoles = [{}, {}, {}, {}, {}];
   const bans = {};
+  const enemyBans = {};
   let orderN = 0;
+  let n = 0;
   for (let i = 0; i < (games || []).length; i += 1) {
     const game = games[i];
     const side = sideOf(game, teamName);
     if (!side) continue;
+    n += 1;
     const win = side === "b" ? game.w === 1 : game.w === 0;
     const champs = side === "b" ? game.b : game.r;
     for (let r = 0; r < 5; r += 1) {
@@ -183,6 +186,11 @@ function teamIdentity(teamName, games) {
       if (!mine[b]) continue;
       bans[mine[b]] = (bans[mine[b]] || 0) + 1;
     }
+    const theirs = sideBans(game, side === "b" ? "r" : "b");
+    for (let b = 0; b < theirs.length; b += 1) {
+      if (!theirs[b]) continue;
+      enemyBans[theirs[b]] = (enemyBans[theirs[b]] || 0) + 1;
+    }
   }
   return {
     roles: roles,
@@ -192,7 +200,9 @@ function teamIdentity(teamName, games) {
     orderRoles: orderRoles,
     orderChampRoles: orderChampRoles,
     orderN: orderN,
+    n: n,
     bans: bans,
+    enemyBans: enemyBans,
   };
 }
 
@@ -258,32 +268,63 @@ function countTotal(counts) {
   return n;
 }
 
-function identityDetailTable(counts, wins, rolesByChamp) {
-  const ids = topKeys(counts, 99);
+function identityChampIds(counts, enemyBans) {
+  const seen = {};
+  const ids = [];
+  const picked = Object.keys(counts || {});
+  for (let i = 0; i < picked.length; i += 1) {
+    const id = picked[i];
+    if (!id || seen[id]) continue;
+    seen[id] = true;
+    ids.push(id);
+  }
+  const banned = Object.keys(enemyBans || {});
+  for (let i = 0; i < banned.length; i += 1) {
+    const id = banned[i];
+    if (!id || seen[id] || !enemyBans[id]) continue;
+    seen[id] = true;
+    ids.push(id);
+  }
+  ids.sort(function (a, b) {
+    const pa = (counts[a] || 0) + (enemyBans[a] || 0);
+    const pb = (counts[b] || 0) + (enemyBans[b] || 0);
+    if (pb !== pa) return pb - pa;
+    return (counts[b] || 0) - (counts[a] || 0);
+  });
+  return ids;
+}
+
+function identityDetailTable(counts, wins, rolesByChamp, enemyBans, gameN) {
+  counts = counts || {};
+  wins = wins || {};
+  enemyBans = enemyBans || {};
+  const ids = identityChampIds(counts, enemyBans);
   const total = countTotal(counts);
   const table = document.createElement("table");
   table.className = "pro-table identity-nested";
   const thead = document.createElement("thead");
   const head = document.createElement("tr");
   const headers = rolesByChamp
-    ? ["Champ", "Role", "Games", "WR", "Share"]
-    : ["Champ", "Games", "WR", "Share"];
+    ? ["Champ", "Role", "Games", "WR", "Share", "Ban", "Presence"]
+    : ["Champ", "Games", "WR", "Share", "Ban", "Presence"];
   for (let i = 0; i < headers.length; i += 1) {
     const th = document.createElement("th");
     th.textContent = headers[i];
-    if (i >= headers.length - 3) th.className = "sort-num";
+    if (i >= (rolesByChamp ? 2 : 1)) th.className = "sort-num";
     head.append(th);
   }
   thead.append(head);
   const tbody = document.createElement("tbody");
   if (!ids.length) {
-    emptyRow(tbody, headers.length, "No picks in this slice.");
+    emptyRow(tbody, headers.length, "No picks or bans in this slice.");
   } else {
     for (let i = 0; i < ids.length; i += 1) {
       const id = ids[i];
       const games = counts[id] || 0;
+      const banned = enemyBans[id] || 0;
       const wr = games ? (wins[id] || 0) / games : null;
       const share = total ? games / total : null;
+      const presence = gameN ? (games + banned) / gameN : null;
       const tr = document.createElement("tr");
       const champ = document.createElement("td");
       champ.append(champCell(id));
@@ -296,14 +337,22 @@ function identityDetailTable(counts, wins, rolesByChamp) {
       }
       const gamesCell = document.createElement("td");
       gamesCell.className = "num";
-      gamesCell.textContent = String(games);
+      gamesCell.textContent = games ? String(games) : "0";
       const wrCell = document.createElement("td");
       wrCell.className = "num " + (wr >= 0.5 ? "wr-up" : wr != null ? "wr-down" : "");
       wrCell.textContent = fmtPct(wr);
       const shareCell = document.createElement("td");
       shareCell.className = "num";
       shareCell.textContent = fmtPct(share);
-      tr.append(gamesCell, wrCell, shareCell);
+      const banCell = document.createElement("td");
+      banCell.className = "num";
+      banCell.textContent = banned ? String(banned) : "0";
+      banCell.title = "Times opponents banned this champ in this slice";
+      const presCell = document.createElement("td");
+      presCell.className = "num";
+      presCell.textContent = fmtPct(presence);
+      presCell.title = "Picks plus opponent bans, as a share of games";
+      tr.append(gamesCell, wrCell, shareCell, banCell, presCell);
       tbody.append(tr);
     }
   }
@@ -365,10 +414,21 @@ function pickOrderGroups() {
   ];
 }
 
-function identityExpandable(label, counts, wins, extra, colSpan, rolesByChamp) {
+function sliceEnemyBans(counts, enemyBans) {
+  const out = {};
+  const ids = Object.keys(counts || {});
+  for (let i = 0; i < ids.length; i += 1) {
+    const n = enemyBans[ids[i]] || 0;
+    if (n) out[ids[i]] = n;
+  }
+  return out;
+}
+
+function identityExpandable(label, counts, wins, extra, colSpan, rolesByChamp, enemyBans, gameN) {
   const frag = document.createDocumentFragment();
   const summary = identityChampRow(label, counts, wins, extra);
-  const ids = Object.keys(counts || {});
+  const bans = enemyBans || {};
+  const ids = identityChampIds(counts, bans);
   if (!ids.length) {
     frag.append(summary);
     return frag;
@@ -386,7 +446,7 @@ function identityExpandable(label, counts, wins, extra, colSpan, rolesByChamp) {
   detail.hidden = true;
   const td = document.createElement("td");
   td.colSpan = colSpan;
-  td.append(identityDetailTable(counts, wins, rolesByChamp));
+  td.append(identityDetailTable(counts, wins, rolesByChamp, bans, gameN));
   detail.append(td);
   function toggle(event) {
     event.preventDefault();
@@ -551,6 +611,10 @@ function teamDraftScore(teamName, games) {
     banThreat: 0,
     banDeny: 0,
     banMastery: 0,
+    forced: 0,
+    forcedThreat: 0,
+    forcedDeny: 0,
+    forcedMastery: 0,
   };
   let weights = null;
   for (let i = 0; i < (games || []).length; i += 1) {
@@ -560,7 +624,8 @@ function teamDraftScore(teamName, games) {
     const rec = predict.draftQuality(
       sideLineup(game, mine),
       sideLineup(game, mine === "b" ? "r" : "b"),
-      sideBans(game, mine)
+      sideBans(game, mine),
+      sideBans(game, mine === "b" ? "r" : "b")
     );
     if (!rec || rec.score == null || !isFinite(rec.score)) continue;
     num += rec.score;
@@ -574,6 +639,10 @@ function teamDraftScore(teamName, games) {
     parts.banThreat += rec.banThreat;
     parts.banDeny += rec.banDeny;
     parts.banMastery += rec.banMastery;
+    parts.forced += rec.forced;
+    parts.forcedThreat += rec.forcedThreat;
+    parts.forcedDeny += rec.forcedDeny;
+    parts.forcedMastery += rec.forcedMastery;
     weights = rec.weights;
   }
   if (!den) return null;
@@ -588,6 +657,10 @@ function teamDraftScore(teamName, games) {
     banThreat: parts.banThreat / den,
     banDeny: parts.banDeny / den,
     banMastery: parts.banMastery / den,
+    forced: parts.forced / den,
+    forcedThreat: parts.forcedThreat / den,
+    forcedDeny: parts.forcedDeny / den,
+    forcedMastery: parts.forcedMastery / den,
     n: den,
     weights: weights,
   };
@@ -595,7 +668,7 @@ function teamDraftScore(teamName, games) {
 
 function draftTip(rec) {
   if (!rec) {
-    return "How well this team drafts vs other teams in this filter. Counters and pairings ×2. Bans score denied threats, enemy pairings, and enemy mastery.";
+    return "How well this team drafts vs other teams in this filter. Counters and pairings ×2. Bans score denied threats, enemy pairings, and enemy mastery. Forced bans score when opponents take away this team's threats, pairings, and mastery.";
   }
   const w = rec.weights || {};
   return (
@@ -631,6 +704,16 @@ function draftTip(rec) {
     fmtScore(rec.banDeny) +
     " · mastery " +
     fmtScore(rec.banMastery) +
+    ") · forced " +
+    fmtScore(rec.forced) +
+    " ×" +
+    Number(w.forced || 1).toFixed(2) +
+    " (threat " +
+    fmtScore(rec.forcedThreat) +
+    " · deny " +
+    fmtScore(rec.forcedDeny) +
+    " · mastery " +
+    fmtScore(rec.forcedMastery) +
     ")"
   );
 }
@@ -647,6 +730,10 @@ function centerDraftScores(rows) {
     "banThreat",
     "banDeny",
     "banMastery",
+    "forced",
+    "forcedThreat",
+    "forcedDeny",
+    "forcedMastery",
   ];
   const means = {};
   for (let k = 0; k < keys.length; k += 1) {
@@ -1070,7 +1157,16 @@ function renderTeamIdentity(rec) {
       roleCell.className = "pro-role";
       roleCell.textContent = (mostCommon(merged.roles) || "—").toUpperCase();
       orderRows.push(
-        identityExpandable(group.label, merged.counts, merged.wins, roleCell, 6, merged.champRoles)
+        identityExpandable(
+          group.label,
+          merged.counts,
+          merged.wins,
+          roleCell,
+          6,
+          merged.champRoles,
+          sliceEnemyBans(merged.counts, stats.enemyBans),
+          stats.n
+        )
       );
     }
     body.append(
@@ -1091,7 +1187,18 @@ function renderTeamIdentity(rec) {
 
   const sigRows = [];
   for (let r = 0; r < ROLE_KEYS.length; r += 1) {
-    sigRows.push(identityExpandable(ROLE_KEYS[r].toUpperCase(), stats.roles[r], stats.roleWins[r], null, 5));
+    sigRows.push(
+      identityExpandable(
+        ROLE_KEYS[r].toUpperCase(),
+        stats.roles[r],
+        stats.roleWins[r],
+        null,
+        5,
+        null,
+        sliceEnemyBans(stats.roles[r], stats.enemyBans),
+        stats.n
+      )
+    );
   }
   body.append(
     identityTable(
@@ -1111,7 +1218,13 @@ function renderTeamIdentity(rec) {
   banBlock.className = "team-identity-block";
   const banHead = document.createElement("h5");
   banHead.textContent = "Ban identity";
-  banBlock.append(banHead, simpleStrip(topKeys(stats.bans, 8)));
+  const weBan = document.createElement("p");
+  weBan.className = "muted identity-ban-label";
+  weBan.textContent = "We ban";
+  const vsBan = document.createElement("p");
+  vsBan.className = "muted identity-ban-label";
+  vsBan.textContent = "Banned against us";
+  banBlock.append(banHead, weBan, simpleStrip(topKeys(stats.bans, 8)), vsBan, simpleStrip(topKeys(stats.enemyBans, 8)));
   body.append(banBlock);
 }
 

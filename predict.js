@@ -212,7 +212,7 @@
     return num / den;
   }
 
-  const DRAFT_WEIGHTS = { wr: 1, pop: 1, safety: 1, counter: 2, pairing: 2, ban: 1.5 };
+  const DRAFT_WEIGHTS = { wr: 1, pop: 1, safety: 1, counter: 2, pairing: 2, ban: 1.5, forced: 1.5 };
   const POWER_PRIOR_GAMES = 4000;
   const POPULARITY_SCALE = 4.7;
   const PAIR_PRIOR_GAMES = 400;
@@ -451,7 +451,7 @@
     };
   }
 
-  function draftQuality(us, them, bans) {
+  function draftQuality(us, them, bans, theirBans) {
     us = us || [];
     them = them || [];
     if (us.length < 3 || them.length < 3) return null;
@@ -482,6 +482,7 @@
     counter /= n;
     pairing /= n;
     const bansRec = scoreBans(bans, us, them);
+    const forcedRec = scoreBans(theirBans, them, us);
     const w = DRAFT_WEIGHTS;
     return {
       score:
@@ -490,7 +491,8 @@
         w.safety * safety +
         w.counter * counter +
         w.pairing * pairing +
-        w.ban * bansRec.ban,
+        w.ban * bansRec.ban +
+        w.forced * forcedRec.ban,
       wr: wr,
       pop: pop,
       safety: safety,
@@ -500,6 +502,10 @@
       banThreat: bansRec.threat,
       banDeny: bansRec.deny,
       banMastery: bansRec.mastery,
+      forced: forcedRec.ban,
+      forcedThreat: forcedRec.threat,
+      forcedDeny: forcedRec.deny,
+      forcedMastery: forcedRec.mastery,
       weights: w,
     };
   }
