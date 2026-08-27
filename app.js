@@ -669,6 +669,18 @@ function roleTaken(key, filled) {
   return !!key && (filled[key] || 0) >= ROLE_FILL_LOCK;
 }
 
+function openRoleFit(id) {
+  const filled = filledRoles();
+  const rates = champRoleRates(id);
+  let fit = 0;
+  for (let i = 0; i < ROLE_KEYS.length; i += 1) {
+    const role = ROLE_KEYS[i];
+    if (roleTaken(role, filled)) continue;
+    fit = Math.max(fit, rates[role] || 0);
+  }
+  return fit;
+}
+
 function roleConflict(id, filled) {
   const rates = champRoleRates(id);
   let overlap = 0;
@@ -1719,11 +1731,16 @@ function chartRankedChoices(side, mode) {
       let value = score ? score.avg : 0;
       let denial = 0;
       if (mode === "denial") {
-        const otherScore = withRecContext(other, function () {
-          const otherScore = scoreChampion(champ.id, enemyIds(), allyIds(), BOT_WEIGHTS);
-          return otherScore ? otherScore.avg : 0;
+        const playerNeed = withRecContext(other, function () {
+          return openRoleFit(champ.id);
         });
-        denial = Math.max(0, value - otherScore);
+        if (playerNeed) {
+          const otherScore = withRecContext(other, function () {
+            const otherScore = scoreChampion(champ.id, enemyIds(), allyIds(), BOT_WEIGHTS);
+            return otherScore ? otherScore.avg : 0;
+          });
+          denial = Math.max(0, value - otherScore) * playerNeed;
+        }
         value += BOT_WEIGHTS.denial * denial;
       }
       choices.push({
