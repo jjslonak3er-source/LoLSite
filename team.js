@@ -12,6 +12,7 @@ const teamEls = {
   patches: document.getElementById("team-patches"),
   views: document.getElementById("team-views"),
   sides: document.getElementById("team-sides"),
+  series: document.getElementById("team-series"),
   summary: document.getElementById("team-summary"),
   boardTitle: document.getElementById("team-board-title"),
   rosterView: document.getElementById("team-roster-view"),
@@ -29,8 +30,12 @@ let team = params.get("team") || "";
 let teamView = params.get("view") === "identity" ? "identity" : "roster";
 let teamPick = (params.get("pick") || "").toLowerCase();
 if (teamPick !== "first" && teamPick !== "second") teamPick = "all";
+let teamGame = Number(params.get("game") || 0);
+if (teamGame < 1 || teamGame > 5) teamGame = 0;
 let rosterSort = "role";
 let rosterDir = 1;
+let teamSeries = { meta: {}, groups: {} };
+const fearlessMemo = {};
 
 function windowParam() {
   return RIFT_WINDOW.param();
@@ -45,6 +50,8 @@ function teamSyncUrl() {
   url.searchParams.set("patch", formatSel(patches));
   if (teamPick === "first" || teamPick === "second") url.searchParams.set("pick", teamPick);
   else url.searchParams.delete("pick");
+  if (teamGame) url.searchParams.set("game", String(teamGame));
+  else url.searchParams.delete("game");
   url.searchParams.delete("side");
   if (team && teamView === "identity") url.searchParams.set("view", "identity");
   else url.searchParams.delete("view");
@@ -84,6 +91,14 @@ function teamChips() {
       renderTeam();
     });
   }
+  if (teamEls.series) {
+    const gameLabel = teamGame ? String(teamGame) : "All";
+    chipRow(teamEls.series, ["All", "1", "2", "3", "4", "5"], gameLabel, function (name) {
+      teamGame = name === "All" ? 0 : Number(name);
+      teamSyncUrl();
+      renderTeam();
+    });
+  }
   if (teamEls.views) {
     teamEls.views.hidden = !team;
     if (team) {
@@ -101,6 +116,72 @@ function pickWanted(game, sideKey) {
   const first = hadFirstPick(game, sideKey);
   if (first == null) return false;
   return teamPick === "first" ? first : !first;
+}
+
+function seriesKey(game) {
+  const teams = [game.bt || "", game.rt || ""].sort();
+  return (game.d || "") + "|" + (game.l || "") + "|" + teams.join("|");
+}
+
+function parseGameNo(id) {
+  const match = String(id || "").match(/_game_(\d+)$/i);
+  return match ? Number(match[1]) : 0;
+}
+
+function buildTeamSeries(games) {
+  const groups = {};
+  const meta = {};
+  for (let i = 0; i < (games || []).length; i += 1) {
+    const game = games[i];
+    const key = seriesKey(game);
+    (groups[key] || (groups[key] = [])).push(game);
+  }
+  const keys = Object.keys(groups);
+  for (let g = 0; g < keys.length; g += 1) {
+    const list = groups[keys[g]];
+    list.sort(function (a, b) {
+      const na = parseGameNo(a.g);
+      const nb = parseGameNo(b.g);
+      if (na && nb && na !== nb) return na - nb;
+      return String(a.g || "").localeCompare(String(b.g || ""), undefined, { numeric: true });
+    });
+    for (let i = 0; i < list.length; i += 1) {
+      meta[list[i].g] = { n: parseGameNo(list[i].g) || i + 1, of: list.length, key: keys[g] };
+    }
+  }
+  return { meta: meta, groups: groups };
+}
+
+function seriesGameNo(game) {
+  const rec = teamSeries.meta[game.g];
+  return rec ? rec.n : 0;
+}
+
+function seriesWanted(game) {
+  if (!teamGame) return true;
+  return seriesGameNo(game) === teamGame;
+}
+
+function fearlessSet(game) {
+  const gid = game && game.g;
+  if (!gid) return {};
+  if (fearlessMemo[gid]) return fearlessMemo[gid];
+  const info = teamSeries.meta[gid];
+  const locked = {};
+  if (info && info.n > 1) {
+    const list = teamSeries.groups[info.key] || [];
+    for (let i = 0; i < list.length; i += 1) {
+      const other = list[i];
+      const otherNo = (teamSeries.meta[other.g] && teamSeries.meta[other.g].n) || 0;
+      if (other.g === gid || otherNo >= info.n) continue;
+      const champs = (other.b || []).concat(other.r || []);
+      for (let c = 0; c < champs.length; c += 1) {
+        if (champs[c]) locked[champs[c]] = true;
+      }
+    }
+  }
+  fearlessMemo[gid] = locked;
+  return locked;
 }
 
 function sideOf(game, name) {
@@ -365,7 +446,7 @@ function identityDetailTable(counts, wins, rolesByChamp, available) {
         row.games +
         " of " +
         row.open +
-        " games where it was still available (not banned by either team before this pick)";
+        " games where it was still available (not banned and not already picked earlier in the series)";
       tr.append(gamesCell, wrCell, shareCell, presCell);
       tbody.append(tr);
     }
@@ -375,7 +456,8 @@ function identityDetailTable(counts, wins, rolesByChamp, available) {
   return table;
 }
 
-function champAvailableAtSlot(game, champId, slot) {
+function champAvailableAtSlot(game, champId, slot, locked) {
+  if (locked && locked[champId]) return false;
   const n = slot < 3 ? 3 : 5;
   const bb = game.bb || [];
   const rb = game.rb || [];
@@ -403,9 +485,10 @@ function identityAvailable(games, teamName, champIds, slots, roleIndex) {
     const side = sideOf(game, teamName);
     if (!side) continue;
     const slot = slots ? Math.min.apply(null, slots) : roleDraftSlot(game, side, roleIndex);
+    const locked = fearlessSet(game);
     for (let i = 0; i < champIds.length; i += 1) {
       const id = champIds[i];
-      if (champAvailableAtSlot(game, id, slot)) avail[id] += 1;
+      if (champAvailableAtSlot(game, id, slot, locked)) avail[id] += 1;
     }
   }
   return avail;
@@ -516,6 +599,7 @@ function collectTeams() {
       const side = sides[s];
       if (!side.team) continue;
       if (!pickWanted(game, side.key)) continue;
+      if (!seriesWanted(game)) continue;
       const rec = map[side.team] || (map[side.team] = {
         name: side.team,
         leagues: {},
@@ -1012,13 +1096,25 @@ function renderTeamDirectory() {
 
 function renderTeamDetail() {
   const map = collectTeams();
-  const rec = map[team];
-  if (!rec) {
-    team = "";
-    teamSyncUrl();
-    renderTeamDirectory();
-    return;
-  }
+  const rec = map[team] || {
+    name: team,
+    leagues: {},
+    games: [],
+    wins: 0,
+    k: 0,
+    d: 0,
+    a: 0,
+    gd: 0,
+    gdN: 0,
+    champs: {},
+    players: {},
+    fb: 0,
+    fbN: 0,
+    ft: 0,
+    ftN: 0,
+    fd: 0,
+    fdN: 0,
+  };
   teamEls.layout.classList.remove("is-directory");
   teamEls.layout.classList.add("is-team");
   const n = rec.games.length;
@@ -1086,6 +1182,7 @@ function renderTeamDetail() {
             "&patch=" +
             encodeURIComponent(formatSel(patches)) +
             (teamPick === "first" || teamPick === "second" ? "&pick=" + teamPick : "") +
+            (teamGame ? "&game=" + teamGame : "") +
             (teamView === "identity" ? "&view=identity" : "")
         );
     });
@@ -1278,6 +1375,7 @@ function renderTeam() {
 function bootTeam() {
   try {
     initData();
+    teamSeries = buildTeamSeries((bundle && bundle.games) || []);
     if (teamEls.search) {
       teamEls.search.addEventListener("input", function () {
         search = teamEls.search.value;
