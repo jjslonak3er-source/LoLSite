@@ -23,6 +23,9 @@ const BOT_WEIGHTS = Object.freeze({
   denial: 1.4,
   response: 1,
 });
+const BOT_SPICE_RATE = 0.1;
+const BOT_SPICE_OPTIONS = 3;
+const BOT_SPICE_RELATIVE_GAP = 0.1;
 const WEIGHT_STORAGE = "riftDraft.weights.v5";
 const LEGACY_WEIGHT_STORAGE = "riftDraft.weights.v4";
 const LEGACY_WEIGHT_STORAGE_V2 = "riftDraft.weights.v2";
@@ -1523,7 +1526,8 @@ function resetGame() {
 }
 
 function nextGame() {
-  if (state.gameIndex + 1 >= state.seriesLength) {
+  const openEndedFearless = state.fearless && state.seriesLength === 1;
+  if (!openEndedFearless && state.gameIndex + 1 >= state.seriesLength) {
     toast("Series complete");
     return;
   }
@@ -1717,6 +1721,27 @@ function firstFreeChamp() {
   return null;
 }
 
+function botSpicePool(choices) {
+  if (!choices.length) return [];
+  const best = choices[0].score;
+  const floor =
+    best >= 0
+      ? best * (1 - BOT_SPICE_RELATIVE_GAP)
+      : best - Math.max(0.75, Math.abs(best) * BOT_SPICE_RELATIVE_GAP);
+  return choices
+    .slice(0, BOT_SPICE_OPTIONS)
+    .filter(function (choice) {
+      return choice.score >= floor;
+    });
+}
+
+function botPickChoice(choices, allowSpice) {
+  if (!choices.length) return null;
+  if (!allowSpice || Math.random() >= BOT_SPICE_RATE) return choices[0];
+  const pool = botSpicePool(choices);
+  return pool.length ? pool[Math.floor(Math.random() * pool.length)] : choices[0];
+}
+
 function chartRankedChoices(side, mode) {
   return withRecContext(side, function () {
     const taken = takenIds();
@@ -1761,7 +1786,8 @@ function chartRankedChoices(side, mode) {
 function chartBotChoice(step) {
   const side = step.kind === "ban" ? chartYou : step.team;
   const choices = chartRankedChoices(side, step.kind === "ban" ? "denial" : "");
-  if (choices.length) return choices[0].id;
+  const choice = botPickChoice(choices, step.kind === "pick");
+  if (choice) return choice.id;
   return firstFreeChamp();
 }
 
@@ -1803,6 +1829,7 @@ function chartBotPairChoice(steps) {
   const oldSecondRole = state[second.team].roles[second.index];
   const firstChoices = chartRankedChoices(first.team);
   let best = null;
+  const pairChoices = [];
 
   for (let i = 0; i < firstChoices.length; i += 1) {
     const firstChoice = firstChoices[i];
@@ -1811,6 +1838,11 @@ function chartBotPairChoice(steps) {
     for (let j = 0; j < secondChoices.length; j += 1) {
       const secondChoice = secondChoices[j];
       const combined = firstChoice.score + secondChoice.score;
+      pairChoices.push({
+        first: firstChoice.id,
+        second: secondChoice.id,
+        score: combined,
+      });
       if (!best || combined > best.score) {
         best = {
           first: firstChoice.id,
@@ -1824,7 +1856,18 @@ function chartBotPairChoice(steps) {
   }
   secondDest[second.index] = oldSecond;
   state[second.team].roles[second.index] = oldSecondRole;
-  return best ? [best.first, best.second] : [];
+  if (!best) return [];
+  if (Math.random() < BOT_SPICE_RATE) {
+    pairChoices.sort(function (a, b) {
+      return b.score - a.score;
+    });
+    const pool = botSpicePool(pairChoices);
+    if (pool.length) {
+      const choice = pool[Math.floor(Math.random() * pool.length)];
+      return [choice.first, choice.second];
+    }
+  }
+  return [best.first, best.second];
 }
 
 function queueChartBot() {
@@ -2339,7 +2382,10 @@ function render() {
   renderRoster("red");
   els.fearless.checked = state.fearless;
   els.series.value = String(state.seriesLength);
-  els.gameLabel.textContent = "Game " + (state.gameIndex + 1) + " / " + state.seriesLength;
+  els.gameLabel.textContent =
+    state.fearless && state.seriesLength === 1
+      ? "Fearless game " + (state.gameIndex + 1)
+      : "Game " + (state.gameIndex + 1) + " / " + state.seriesLength;
   renderBans("blue", els.blueBans);
   renderBans("red", els.redBans);
   renderPicks("blue", els.bluePicks);
