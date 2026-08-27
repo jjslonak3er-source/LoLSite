@@ -5,10 +5,22 @@ const ROLE_KEYS = ["top", "jng", "mid", "adc", "sup"];
 const ROLE_FILTERS = ["All"].concat(ROLES);
 const POWER_PRIOR_GAMES = 4000;
 const SHARP_COUNTER_DELTA = -2;
-const WEIGHT_DEFAULTS = { wr: 1, pop: 1, safety: 1, counter: 1, pairing: 1, unique: 1 };
-const WEIGHT_STORAGE = "riftDraft.weights.v2";
+const WEIGHT_DEFAULTS = {
+  wr: 1,
+  pop: 1,
+  safety: 1,
+  counter: 1,
+  pairing: 1,
+  unique: 1.25,
+  denial: 0.35,
+  response: 0.75,
+};
+const WEIGHT_STORAGE = "riftDraft.weights.v4";
+const LEGACY_WEIGHT_STORAGE = "riftDraft.weights.v3";
+const LEGACY_WEIGHT_STORAGE_V2 = "riftDraft.weights.v2";
 const PAIR_PRIOR_GAMES = 400;
 const UNIQUE_ROLE_SCALE = 8;
+const UNIQUE_PRIMARY_SCALE = 0.4;
 const ROLE_FILL_LOCK = 0.75;
 const POPULARITY_SCALE = 4.7;
 const TEAM_POP_BLEND = 1;
@@ -85,12 +97,16 @@ const els = {
   wCounter: document.getElementById("w-counter"),
   wPairing: document.getElementById("w-pairing"),
   wUnique: document.getElementById("w-unique"),
+  wDenial: document.getElementById("w-denial"),
+  wResponse: document.getElementById("w-response"),
   wWrVal: document.getElementById("w-wr-val"),
   wPopVal: document.getElementById("w-pop-val"),
   wSafetyVal: document.getElementById("w-safety-val"),
   wCounterVal: document.getElementById("w-counter-val"),
   wPairingVal: document.getElementById("w-pairing-val"),
   wUniqueVal: document.getElementById("w-unique-val"),
+  wDenialVal: document.getElementById("w-denial-val"),
+  wResponseVal: document.getElementById("w-response-val"),
 };
 
 let patch = "";
@@ -660,6 +676,23 @@ function roleConflict(id, filled) {
   return { overlap: overlap, hits: hits };
 }
 
+function roleResponse(id) {
+  const other = recSide === "blue" ? "red" : "blue";
+  const enemyTeam = state[other];
+  const rates = champRoleRates(id);
+  let response = 0;
+  for (let i = 0; i < enemyTeam.picks.length; i += 1) {
+    const enemy = enemyTeam.picks[i];
+    if (!enemy) continue;
+    const role = (enemyTeam.roles[i] || pickPrimaryRole(enemy) || "").toLowerCase();
+    const fit = rates[role] || 0;
+    if (!fit) continue;
+    const delta = matchupDelta(id, enemy);
+    if (delta != null) response += delta * fit;
+  }
+  return response;
+}
+
 function matchupEntry(us, them) {
   if (counters[us] && counters[us][them]) return counters[us][them];
   return null;
@@ -955,8 +988,12 @@ function scoreChampion(id, enemies, allies) {
   for (let i = 0; i < parts.length; i += 1) counter += parts[i].weighted;
   let pairing = 0;
   for (let i = 0; i < pairs.length; i += 1) pairing += pairs[i].weighted;
-  const roles = roleConflict(id, filledRoles());
-  const unique = -UNIQUE_ROLE_SCALE * roles.overlap;
+  const response = roleResponse(id);
+  const filled = filledRoles();
+  const roles = roleConflict(id, filled);
+  const primary = pickPrimaryRole(id);
+  const primaryTaken = primary ? Math.min(1, filled[primary] || 0) : 0;
+  const unique = -UNIQUE_ROLE_SCALE * (roles.overlap + UNIQUE_PRIMARY_SCALE * primaryTaken);
   const base = blind ? blind.score : 0;
   const role = (power && power.role) || powerRoleFor(id);
   const org = orgOf(recSide);
@@ -996,14 +1033,26 @@ function scoreChampion(id, enemies, allies) {
     teamWr = weights.wr * (teamPower - leaguePower);
   }
   rare *= weights.pop;
-  if (!parts.length && !pairs.length && !blind && !popShift && !comfort && !rare && !teamWr) return null;
+  if (!parts.length && !pairs.length && !blind && !popShift && !comfort && !rare && !teamWr && !response) {
+    return null;
+  }
   return {
-    avg: base + weights.counter * counter + weights.pairing * pairing + weights.unique * unique + popShift + comfort + teamWr - rare,
+    avg:
+      base +
+      weights.counter * counter +
+      weights.pairing * pairing +
+      weights.unique * unique +
+      weights.response * response +
+      popShift +
+      comfort +
+      teamWr -
+      rare,
     power: power,
     blind: blind,
     counter: counter,
     pairing: pairing,
     unique: unique,
+    response: response,
     teamPop: popShift,
     teamWr: teamWr,
     teamRare: rare,
@@ -1045,6 +1094,7 @@ function recommendedPicks() {
       counter: score.counter,
       pairing: score.pairing,
       unique: score.unique,
+      response: score.response,
       teamPop: score.teamPop,
       teamWr: score.teamWr,
       teamRare: score.teamRare,
@@ -1114,6 +1164,14 @@ function scoreTooltip(champ, score) {
         formatDelta(weights.counter * score.counter) +
         " vs enemy · ×" +
         weights.counter.toFixed(2)
+    );
+  }
+  if (score.response) {
+    lines.push(
+      "response  " +
+        formatDelta(weights.response * score.response) +
+        " into picked roles · ×" +
+        weights.response.toFixed(2)
     );
   }
   const parts = score.parts || [];
@@ -1592,19 +1650,32 @@ function firstFreeChamp() {
   return null;
 }
 
-function chartRankedChoices(side) {
+function chartRankedChoices(side, mode) {
   return withRecContext(side, function () {
     const taken = takenIds();
     const choices = [];
+    const other = side === "blue" ? "red" : "blue";
     for (let i = 0; i < champions.length; i += 1) {
       const champ = champions[i];
       if (taken.has(champ.id)) continue;
       const enemies = enemyIds();
       const allies = allyIds();
       const score = scoreChampion(champ.id, enemies, allies);
+      let value = score ? score.avg : 0;
+      let denial = 0;
+      if (mode === "denial") {
+        const otherScore = withRecContext(other, function () {
+          const otherScore = scoreChampion(champ.id, enemyIds(), allyIds());
+          return otherScore ? otherScore.avg : 0;
+        });
+        denial = Math.max(0, value - otherScore);
+        value += weights.denial * denial;
+      }
       choices.push({
         id: champ.id,
-        score: score ? score.avg : 0,
+        score: value,
+        baseScore: score ? score.avg : 0,
+        denial: denial,
         order: i,
       });
     }
@@ -1617,7 +1688,7 @@ function chartRankedChoices(side) {
 
 function chartBotChoice(step) {
   const side = step.kind === "ban" ? chartYou : step.team;
-  const choices = chartRankedChoices(side);
+  const choices = chartRankedChoices(side, step.kind === "ban" ? "denial" : "");
   if (choices.length) return choices[0].id;
   return firstFreeChamp();
 }
@@ -2252,7 +2323,17 @@ function clampWeight(value, fallback) {
 function loadWeights() {
   weights = Object.assign({}, WEIGHT_DEFAULTS);
   try {
-    const saved = JSON.parse(localStorage.getItem(WEIGHT_STORAGE) || "null");
+    let saved = JSON.parse(localStorage.getItem(WEIGHT_STORAGE) || "null");
+    if (!saved) {
+      saved = JSON.parse(localStorage.getItem(LEGACY_WEIGHT_STORAGE) || "null");
+      if (saved && Number(saved.response) === 0.35) {
+        saved.response = WEIGHT_DEFAULTS.response;
+      }
+    }
+    if (!saved) {
+      saved = JSON.parse(localStorage.getItem(LEGACY_WEIGHT_STORAGE_V2) || "null");
+      if (saved && Number(saved.unique) === 1) saved.unique = WEIGHT_DEFAULTS.unique;
+    }
     if (saved && typeof saved === "object") {
       weights.wr = clampWeight(saved.wr, WEIGHT_DEFAULTS.wr);
       weights.pop = clampWeight(saved.pop, WEIGHT_DEFAULTS.pop);
@@ -2260,6 +2341,8 @@ function loadWeights() {
       weights.counter = clampWeight(saved.counter, WEIGHT_DEFAULTS.counter);
       weights.pairing = clampWeight(saved.pairing, WEIGHT_DEFAULTS.pairing);
       weights.unique = clampWeight(saved.unique, WEIGHT_DEFAULTS.unique);
+      weights.denial = clampWeight(saved.denial, WEIGHT_DEFAULTS.denial);
+      weights.response = clampWeight(saved.response, WEIGHT_DEFAULTS.response);
     }
   } catch (err) {}
   if (els.wWr) els.wWr.value = String(weights.wr);
@@ -2268,6 +2351,8 @@ function loadWeights() {
   if (els.wCounter) els.wCounter.value = String(weights.counter);
   if (els.wPairing) els.wPairing.value = String(weights.pairing);
   if (els.wUnique) els.wUnique.value = String(weights.unique);
+  if (els.wDenial) els.wDenial.value = String(weights.denial);
+  if (els.wResponse) els.wResponse.value = String(weights.response);
   syncWeightLabels();
 }
 
@@ -2284,6 +2369,8 @@ function syncWeightLabels() {
   if (els.wCounterVal) els.wCounterVal.textContent = weights.counter.toFixed(2);
   if (els.wPairingVal) els.wPairingVal.textContent = weights.pairing.toFixed(2);
   if (els.wUniqueVal) els.wUniqueVal.textContent = weights.unique.toFixed(2);
+  if (els.wDenialVal) els.wDenialVal.textContent = weights.denial.toFixed(2);
+  if (els.wResponseVal) els.wResponseVal.textContent = weights.response.toFixed(2);
 }
 
 function readWeightSliders() {
@@ -2293,6 +2380,8 @@ function readWeightSliders() {
   weights.counter = clampWeight(els.wCounter && els.wCounter.value, WEIGHT_DEFAULTS.counter);
   weights.pairing = clampWeight(els.wPairing && els.wPairing.value, WEIGHT_DEFAULTS.pairing);
   weights.unique = clampWeight(els.wUnique && els.wUnique.value, WEIGHT_DEFAULTS.unique);
+  weights.denial = clampWeight(els.wDenial && els.wDenial.value, WEIGHT_DEFAULTS.denial);
+  weights.response = clampWeight(els.wResponse && els.wResponse.value, WEIGHT_DEFAULTS.response);
   syncWeightLabels();
   saveWeights();
   renderRecs();
@@ -2301,7 +2390,7 @@ function readWeightSliders() {
 
 function bindWeights() {
   loadWeights();
-  ["wWr", "wPop", "wSafety", "wCounter", "wPairing", "wUnique"].forEach(function (key) {
+  ["wWr", "wPop", "wSafety", "wCounter", "wPairing", "wUnique", "wDenial", "wResponse"].forEach(function (key) {
     if (!els[key]) return;
     els[key].addEventListener("input", readWeightSliders);
   });
