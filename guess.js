@@ -381,10 +381,34 @@ function renderBans(root, ids) {
 
 function renderPicks(root, ids, names, side) {
   root.innerHTML = "";
+  const ordered = pickOrderRows(ids, side);
   for (let i = 0; i < 5; i += 1) {
-    const hidden = mode === "pick" && puzzle && puzzle.side === side && puzzle.index === i;
-    root.append(pickNode(ids[i], ROLE_KEYS[i], hidden, solved, names && names[i]));
+    const row = ordered[i];
+    const hidden = mode === "pick" && puzzle && puzzle.side === side && puzzle.id === row.id;
+    root.append(pickNode(row.id, row.role, hidden, solved, names && names[row.index]));
   }
+}
+
+function pickOrderRows(ids, side) {
+  const rows = [];
+  const game = puzzle && puzzle.game;
+  const orderIds = game && (side === "b" ? game.bpk : game.rpk);
+  const usePickOrder =
+    mode === "pick" &&
+    misses >= 2 &&
+    orderIds &&
+    orderIds.filter(Boolean).length === 5;
+  const order = usePickOrder ? orderIds : ids;
+  for (let i = 0; i < order.length; i += 1) {
+    const id = order[i];
+    const index = ids.indexOf(id);
+    if (id && index !== -1) rows.push({ id: id, index: index, role: ROLE_KEYS[index] });
+  }
+  for (let i = 0; i < ids.length; i += 1) {
+    if (rows.some(function (row) { return row.index === i; })) continue;
+    rows.push({ id: ids[i], index: i, role: ROLE_KEYS[i] });
+  }
+  return rows;
 }
 
 function renderFearless() {
@@ -412,7 +436,7 @@ function matchupText() {
 }
 
 function namesVisible() {
-  return solved || showNames;
+  return solved || showNames || (mode === "pick" && misses >= 1);
 }
 
 function sideLabel(side) {
@@ -598,6 +622,7 @@ function guessChamp(id) {
   }
   const left = PICK_TRIES - misses;
   setFeedback("Not " + champName(id) + " · " + left + (left === 1 ? " try" : " tries") + " left", "down");
+  renderDraft();
   renderGrid();
 }
 
