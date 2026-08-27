@@ -2001,11 +2001,16 @@ select:hover,
   gap: 8px 12px;
 }
 
-.player-layout.is-directory .team-filter-row {
-  grid-template-columns: auto minmax(0, 1fr);
+.team-league-row {
+  grid-template-columns: minmax(0, 1fr) auto;
 }
 
-.player-layout.is-team #team-views {
+.player-layout.is-directory .team-league-row {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.player-layout.is-team .team-league-row #team-views,
+.team-filter-row #team-sides {
   padding-left: 10px;
   border-left: 1px solid var(--line);
 }
@@ -2067,11 +2072,13 @@ select:hover,
 
 @media (max-width: 900px) {
   .team-filter-row,
-  .player-layout.is-directory .team-filter-row {
+  .team-league-row,
+  .player-layout.is-directory .team-league-row {
     grid-template-columns: 1fr;
   }
 
-  .player-layout.is-team #team-views {
+  .player-layout.is-team .team-league-row #team-views,
+  .team-filter-row #team-sides {
     padding-left: 0;
     border-left: 0;
   }

@@ -11,6 +11,7 @@ const teamEls = {
   windows: document.getElementById("team-windows"),
   patches: document.getElementById("team-patches"),
   views: document.getElementById("team-views"),
+  sides: document.getElementById("team-sides"),
   summary: document.getElementById("team-summary"),
   boardTitle: document.getElementById("team-board-title"),
   rosterView: document.getElementById("team-roster-view"),
@@ -26,6 +27,8 @@ const teamEls = {
 
 let team = params.get("team") || "";
 let teamView = params.get("view") === "identity" ? "identity" : "roster";
+let teamSide = (params.get("side") || "all").toLowerCase();
+if (teamSide !== "blue" && teamSide !== "red") teamSide = "all";
 let rosterSort = "role";
 let rosterDir = 1;
 
@@ -40,6 +43,8 @@ function teamSyncUrl() {
   url.searchParams.set("league", formatSel(leagues));
   url.searchParams.set("window", windowParam());
   url.searchParams.set("patch", formatSel(patches));
+  if (teamSide === "blue" || teamSide === "red") url.searchParams.set("side", teamSide);
+  else url.searchParams.delete("side");
   if (team && teamView === "identity") url.searchParams.set("view", "identity");
   else url.searchParams.delete("view");
   history.replaceState({}, "", url);
@@ -70,6 +75,14 @@ function teamChips() {
     teamSyncUrl();
     renderTeam();
   });
+  if (teamEls.sides) {
+    const sideLabel = teamSide === "blue" ? "Blue" : teamSide === "red" ? "Red" : "All";
+    chipRow(teamEls.sides, ["All", "Blue", "Red"], sideLabel, function (name) {
+      teamSide = name.toLowerCase();
+      teamSyncUrl();
+      renderTeam();
+    });
+  }
   if (teamEls.views) {
     teamEls.views.hidden = !team;
     if (team) {
@@ -80,6 +93,12 @@ function teamChips() {
       });
     }
   }
+}
+
+function sideWanted(key) {
+  if (teamSide === "blue") return key === "b";
+  if (teamSide === "red") return key === "r";
+  return true;
 }
 
 function sideOf(game, name) {
@@ -291,6 +310,7 @@ function collectTeams() {
     for (let s = 0; s < 2; s += 1) {
       const side = sides[s];
       if (!side.team) continue;
+      if (!sideWanted(side.key)) continue;
       const rec = map[side.team] || (map[side.team] = {
         name: side.team,
         leagues: {},
@@ -833,6 +853,7 @@ function renderTeamDetail() {
             encodeURIComponent(windowParam()) +
             "&patch=" +
             encodeURIComponent(formatSel(patches)) +
+            (teamSide === "blue" || teamSide === "red" ? "&side=" + teamSide : "") +
             (teamView === "identity" ? "&view=identity" : "")
         );
     });
@@ -938,12 +959,15 @@ function renderTeamIdentity(rec) {
   grid.className = "team-identity-grid";
   const sideCol = document.createElement("div");
   sideCol.className = "team-identity-pair";
-  sideCol.append(identityBlock("Blue side", stats.sides.b), identityBlock("Red side", stats.sides.r));
+  if (stats.sides.b.n) sideCol.append(identityBlock("Blue side", stats.sides.b));
+  if (stats.sides.r.n) sideCol.append(identityBlock("Red side", stats.sides.r));
   const pickCol = document.createElement("div");
   pickCol.className = "team-identity-pair";
-  pickCol.append(identityBlock("First pick", stats.picks.first), identityBlock("Second pick", stats.picks.second));
-  grid.append(sideCol, pickCol);
-  body.append(grid);
+  if (stats.picks.first.n) pickCol.append(identityBlock("First pick", stats.picks.first));
+  if (stats.picks.second.n) pickCol.append(identityBlock("Second pick", stats.picks.second));
+  if (sideCol.childNodes.length) grid.append(sideCol);
+  if (pickCol.childNodes.length) grid.append(pickCol);
+  if (grid.childNodes.length) body.append(grid);
 
   if (stats.orderN) {
     const orderRows = [];

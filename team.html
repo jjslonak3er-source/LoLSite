@@ -12,7 +12,7 @@
       href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&family=Sora:wght@600;700&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="styles.css?v=45" />
+    <link rel="stylesheet" href="styles.css?v=46" />
   </head>
   <body>
     <div class="vignette"></div>
@@ -58,11 +58,14 @@
             autocomplete="off"
             spellcheck="false"
           />
-          <div id="team-leagues" class="chips" role="tablist" aria-label="Leagues"></div>
+          <div class="team-filter-row team-league-row">
+            <div id="team-leagues" class="chips" role="tablist" aria-label="Leagues"></div>
+            <div id="team-views" class="chips" role="tablist" aria-label="Team view" hidden></div>
+          </div>
           <div class="team-filter-row">
             <div id="team-windows" class="chips" role="tablist" aria-label="Time window"></div>
             <div id="team-patches" class="chips" role="tablist" aria-label="Patches"></div>
-            <div id="team-views" class="chips" role="tablist" aria-label="Team view" hidden></div>
+            <div id="team-sides" class="chips" role="tablist" aria-label="Side"></div>
           </div>
         </div>
         <div id="team-summary" class="player-summary" hidden></div>
@@ -119,6 +122,6 @@
     <script src="predict.js?v=6"></script>
     <script src="window-days.js"></script>
     <script src="player.js?v=43"></script>
-    <script src="team.js?v=20"></script>
+    <script src="team.js?v=21"></script>
   </body>
 </html>
