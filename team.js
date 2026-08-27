@@ -144,6 +144,7 @@ function teamIdentity(teamName, games) {
   const order = [{}, {}, {}, {}, {}];
   const orderWins = [{}, {}, {}, {}, {}];
   const orderRoles = [{}, {}, {}, {}, {}];
+  const orderChampRoles = [{}, {}, {}, {}, {}];
   const bans = {};
   let orderN = 0;
   for (let i = 0; i < (games || []).length; i += 1) {
@@ -171,6 +172,8 @@ function teamIdentity(teamName, games) {
         if (ri >= 0) {
           const role = ROLE_KEYS[ri];
           orderRoles[s][role] = (orderRoles[s][role] || 0) + 1;
+          const byChamp = orderChampRoles[s][id] || (orderChampRoles[s][id] = {});
+          byChamp[role] = (byChamp[role] || 0) + 1;
         }
       }
       if (used) orderN += 1;
@@ -187,6 +190,7 @@ function teamIdentity(teamName, games) {
     order: order,
     orderWins: orderWins,
     orderRoles: orderRoles,
+    orderChampRoles: orderChampRoles,
     orderN: orderN,
     bans: bans,
   };
@@ -227,7 +231,10 @@ function identityChampRow(label, counts, wins, extra) {
   const tr = document.createElement("tr");
   const labelCell = document.createElement("td");
   labelCell.className = "pro-role";
-  labelCell.textContent = label;
+  const lab = document.createElement("span");
+  lab.className = "identity-row-label";
+  lab.textContent = label;
+  labelCell.append(lab);
   const pool = document.createElement("td");
   pool.append(simpleStrip(ids));
   const topCell = document.createElement("td");
@@ -242,6 +249,104 @@ function identityChampRow(label, counts, wins, extra) {
   wrCell.textContent = fmtPct(wr);
   tr.append(gamesCell, wrCell);
   return tr;
+}
+
+function countTotal(counts) {
+  const ids = Object.keys(counts || {});
+  let n = 0;
+  for (let i = 0; i < ids.length; i += 1) n += counts[ids[i]] || 0;
+  return n;
+}
+
+function identityDetailTable(counts, wins, rolesByChamp) {
+  const ids = topKeys(counts, 99);
+  const total = countTotal(counts);
+  const table = document.createElement("table");
+  table.className = "pro-table identity-nested";
+  const thead = document.createElement("thead");
+  const head = document.createElement("tr");
+  const headers = rolesByChamp
+    ? ["Champ", "Role", "Games", "WR", "Share"]
+    : ["Champ", "Games", "WR", "Share"];
+  for (let i = 0; i < headers.length; i += 1) {
+    const th = document.createElement("th");
+    th.textContent = headers[i];
+    if (i >= headers.length - 3) th.className = "sort-num";
+    head.append(th);
+  }
+  thead.append(head);
+  const tbody = document.createElement("tbody");
+  if (!ids.length) {
+    emptyRow(tbody, headers.length, "No picks in this slice.");
+  } else {
+    for (let i = 0; i < ids.length; i += 1) {
+      const id = ids[i];
+      const games = counts[id] || 0;
+      const wr = games ? (wins[id] || 0) / games : null;
+      const share = total ? games / total : null;
+      const tr = document.createElement("tr");
+      const champ = document.createElement("td");
+      champ.append(champCell(id));
+      tr.append(champ);
+      if (rolesByChamp) {
+        const roleCell = document.createElement("td");
+        roleCell.className = "pro-role";
+        roleCell.textContent = (mostCommon(rolesByChamp[id] || {}) || "—").toUpperCase();
+        tr.append(roleCell);
+      }
+      const gamesCell = document.createElement("td");
+      gamesCell.className = "num";
+      gamesCell.textContent = String(games);
+      const wrCell = document.createElement("td");
+      wrCell.className = "num " + (wr >= 0.5 ? "wr-up" : wr != null ? "wr-down" : "");
+      wrCell.textContent = fmtPct(wr);
+      const shareCell = document.createElement("td");
+      shareCell.className = "num";
+      shareCell.textContent = fmtPct(share);
+      tr.append(gamesCell, wrCell, shareCell);
+      tbody.append(tr);
+    }
+  }
+  table.append(thead, tbody);
+  return table;
+}
+
+function identityExpandable(label, counts, wins, extra, colSpan, rolesByChamp) {
+  const frag = document.createDocumentFragment();
+  const summary = identityChampRow(label, counts, wins, extra);
+  const ids = Object.keys(counts || {});
+  if (!ids.length) {
+    frag.append(summary);
+    return frag;
+  }
+  summary.classList.add("identity-toggle");
+  const caret = document.createElement("button");
+  caret.type = "button";
+  caret.className = "identity-caret";
+  caret.textContent = "▸";
+  caret.setAttribute("aria-label", "Show " + label + " picks");
+  summary.firstChild.insertBefore(caret, summary.firstChild.firstChild);
+  summary.setAttribute("aria-expanded", "false");
+  const detail = document.createElement("tr");
+  detail.className = "identity-detail";
+  detail.hidden = true;
+  const td = document.createElement("td");
+  td.colSpan = colSpan;
+  td.append(identityDetailTable(counts, wins, rolesByChamp));
+  detail.append(td);
+  function toggle(event) {
+    event.preventDefault();
+    event.stopPropagation();
+    const open = detail.hidden;
+    detail.hidden = !open;
+    summary.classList.toggle("is-open", open);
+    summary.setAttribute("aria-expanded", open ? "true" : "false");
+    caret.setAttribute("aria-label", (open ? "Hide " : "Show ") + label + " picks");
+  }
+  summary.addEventListener("click", toggle);
+  caret.addEventListener("click", toggle);
+  frag.append(summary, detail);
+  return frag;
 }
 
 function collectTeams() {
@@ -907,7 +1012,9 @@ function renderTeamIdentity(rec) {
       const roleCell = document.createElement("td");
       roleCell.className = "pro-role";
       roleCell.textContent = (mostCommon(stats.orderRoles[s]) || "—").toUpperCase();
-      orderRows.push(identityChampRow("Pick " + (s + 1), stats.order[s], stats.orderWins[s], roleCell));
+      orderRows.push(
+        identityExpandable("Pick " + (s + 1), stats.order[s], stats.orderWins[s], roleCell, 6, stats.orderChampRoles[s])
+      );
     }
     body.append(
       identityTable(
@@ -927,7 +1034,7 @@ function renderTeamIdentity(rec) {
 
   const sigRows = [];
   for (let r = 0; r < ROLE_KEYS.length; r += 1) {
-    sigRows.push(identityChampRow(ROLE_KEYS[r].toUpperCase(), stats.roles[r], stats.roleWins[r]));
+    sigRows.push(identityExpandable(ROLE_KEYS[r].toUpperCase(), stats.roles[r], stats.roleWins[r], null, 5));
   }
   body.append(
     identityTable(

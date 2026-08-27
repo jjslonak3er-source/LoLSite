@@ -2049,6 +2049,55 @@ select:hover,
   color: var(--muted);
 }
 
+.identity-toggle td:first-child {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.identity-caret {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.identity-toggle.is-open .identity-caret {
+  transform: rotate(90deg) translateX(1px);
+}
+
+.pro-table tbody tr.identity-detail,
+.pro-table tbody tr.identity-detail:hover,
+.identity-nested tbody tr,
+.identity-nested tbody tr:hover {
+  cursor: default;
+  background: transparent;
+}
+
+.pro-table tbody tr.identity-detail > td {
+  padding: 0 8px 10px 28px;
+  background: rgba(0, 0, 0, 0.22);
+  border-top: 0;
+}
+
+.identity-nested {
+  width: 100%;
+}
+
+.identity-nested th {
+  position: static;
+  background: transparent;
+  cursor: default;
+}
+
 @media (max-width: 900px) {
   .team-filter-row,
   .team-league-row,
