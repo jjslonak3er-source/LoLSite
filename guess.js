@@ -382,11 +382,35 @@ function renderBans(root, ids) {
 function renderPicks(root, ids, names, side) {
   root.innerHTML = "";
   const ordered = pickOrderRows(ids, side);
+  let previousGroup = "";
   for (let i = 0; i < 5; i += 1) {
     const row = ordered[i];
+    const group = pickOrderGroup(row.pickNumber);
+    if (group && group.id !== previousGroup) {
+      root.append(pickOrderBreak(group.label));
+      previousGroup = group.id;
+    }
     const hidden = mode === "pick" && puzzle && puzzle.side === side && puzzle.id === row.id;
     root.append(pickNode(row.id, row.role, hidden, solved, names && names[row.index]));
   }
+}
+
+function pickOrderBreak(label) {
+  const node = document.createElement("div");
+  node.className = "guess-pick-break";
+  node.textContent = label;
+  return node;
+}
+
+function pickOrderGroup(pickNumber) {
+  if (!pickNumber) return null;
+  if (pickNumber === 1) return { id: "opening", label: "Pick 1 · first pick" };
+  if (pickNumber <= 3) return { id: "early-response", label: "Picks 2–3" };
+  if (pickNumber <= 5) return { id: "late-response", label: "Picks 4–5" };
+  if (pickNumber === 6) return { id: "phase-one-close", label: "Pick 6 · phase 1 close" };
+  if (pickNumber === 7) return { id: "phase-two-open", label: "Pick 7 · phase 2 open" };
+  if (pickNumber <= 9) return { id: "phase-two-response", label: "Picks 8–9" };
+  return { id: "final", label: "Pick 10 · final" };
 }
 
 function pickOrderRows(ids, side) {
@@ -402,11 +426,21 @@ function pickOrderRows(ids, side) {
   for (let i = 0; i < order.length; i += 1) {
     const id = order[i];
     const index = ids.indexOf(id);
-    if (id && index !== -1) rows.push({ id: id, index: index, role: ROLE_KEYS[index] });
+    if (id && index !== -1) {
+      const firstSide = game && game.x && game.x.fp === 0 ? "r" : "b";
+      const firstPick = side === firstSide;
+      const pickNumbers = firstPick ? [1, 4, 5, 8, 9] : [2, 3, 6, 7, 10];
+      rows.push({
+        id: id,
+        index: index,
+        role: ROLE_KEYS[index],
+        pickNumber: usePickOrder ? pickNumbers[i] : 0,
+      });
+    }
   }
   for (let i = 0; i < ids.length; i += 1) {
     if (rows.some(function (row) { return row.index === i; })) continue;
-    rows.push({ id: ids[i], index: i, role: ROLE_KEYS[i] });
+    rows.push({ id: ids[i], index: i, role: ROLE_KEYS[i], pickNumber: 0 });
   }
   return rows;
 }

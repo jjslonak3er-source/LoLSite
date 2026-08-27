@@ -3148,6 +3148,28 @@ body.guess-page {
   padding-top: 0;
 }
 
+.guess-pick-break {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+  margin: 1px 4px;
+  color: var(--muted);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.guess-pick-break::before,
+.guess-pick-break::after {
+  content: "";
+  height: 1px;
+  flex: 1;
+  background: var(--line);
+}
+
 .pick.guess-hidden {
   border-style: dashed;
   border-color: var(--accent);
