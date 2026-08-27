@@ -795,6 +795,10 @@ select:hover,
   border-color: var(--line-strong);
 }
 
+.rec-card.practice-rec {
+  cursor: pointer;
+}
+
 .rec-card img {
   width: 40px;
   height: 40px;

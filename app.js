@@ -1340,6 +1340,7 @@ function placeChampion(id, team, kind, index) {
 }
 
 function clearSlot(team, kind, index) {
+  if (!chartSlotEditable(team, kind, index)) return;
   const dest = slotList(team, kind);
   if (!dest[index]) return;
   snapshot();
@@ -1427,6 +1428,7 @@ function swapSides() {
 }
 
 function cycleRole(team, index) {
+  if (!chartSlotEditable(team, "pick", index)) return;
   const current = state[team].roles[index];
   const next = current == null ? 0 : ROLES.indexOf(current) + 1;
   state[team].roles[index] = next >= ROLES.length ? null : ROLES[next];
@@ -1444,7 +1446,14 @@ function visibleChampions() {
   });
 }
 
+function chartSlotEditable(team, kind, index) {
+  if (!chartOpen || chartStage !== "play") return true;
+  const step = CHART_STEPS[chartCurrentStep()];
+  return !!step && step.team === team && step.kind === kind && step.index === index;
+}
+
 function bindSlotDrop(node, team, kind, index) {
+  if (!chartSlotEditable(team, kind, index)) return;
   node.addEventListener("dragover", function (event) {
     allowDrop(event);
     node.classList.add("drop-hover");
@@ -1469,20 +1478,23 @@ function renderBans(team, root) {
   for (let i = 0; i < 5; i += 1) {
     const slot = document.createElement("div");
     const id = state[team].bans[i];
+    const editable = chartSlotEditable(team, "ban", i);
     slot.className = "ban";
     slot.title = id ? champName(id) + " — double-click to remove" : "Drop a ban here";
     if (id) {
       slot.classList.add("filled");
-      slot.draggable = true;
+      slot.draggable = editable;
       const img = document.createElement("img");
       img.src = portrait(id);
       img.alt = champName(id);
       img.draggable = false;
       slot.append(img);
-      slot.addEventListener("dragstart", function (event) {
-        beginDrag(event, { id: id, team: team, kind: "ban", index: i });
-      });
-      slot.addEventListener("dragend", endDrag);
+      if (editable) {
+        slot.addEventListener("dragstart", function (event) {
+          beginDrag(event, { id: id, team: team, kind: "ban", index: i });
+        });
+        slot.addEventListener("dragend", endDrag);
+      }
     }
     bindSlotDrop(slot, team, "ban", i);
     root.append(slot);
@@ -1494,10 +1506,11 @@ function renderPicks(team, root) {
   for (let i = 0; i < 5; i += 1) {
     const slot = document.createElement("article");
     const id = state[team].picks[i];
+    const editable = chartSlotEditable(team, "pick", i);
     slot.className = "pick";
     slot.title = id ? champName(id) + " — drag to move, double-click to remove" : "Drop a pick here";
     if (id) {
-      slot.draggable = true;
+      slot.draggable = editable;
       slot.classList.add("filled");
       const art = document.createElement("img");
       art.className = "pick-art";
@@ -1513,6 +1526,7 @@ function renderPicks(team, root) {
       role.type = "button";
       role.className = "role-btn";
       role.textContent = state[team].roles[i] || "ROLE";
+      role.disabled = !editable;
       role.addEventListener("click", function (event) {
         event.stopPropagation();
         cycleRole(team, i);
@@ -1522,16 +1536,19 @@ function renderPicks(team, root) {
       clear.className = "role-btn";
       clear.textContent = "✕";
       clear.title = "Return to pool";
+      clear.disabled = !editable;
       clear.addEventListener("click", function (event) {
         event.stopPropagation();
         clearSlot(team, "pick", i);
       });
       meta.append(name, role, clear);
       slot.append(art, meta);
-      slot.addEventListener("dragstart", function (event) {
-        beginDrag(event, { id: id, team: team, kind: "pick", index: i });
-      });
-      slot.addEventListener("dragend", endDrag);
+      if (editable) {
+        slot.addEventListener("dragstart", function (event) {
+          beginDrag(event, { id: id, team: team, kind: "pick", index: i });
+        });
+        slot.addEventListener("dragend", endDrag);
+      }
     } else {
       const empty = document.createElement("div");
       empty.className = "pick-empty";
@@ -1866,25 +1883,30 @@ function renderChartTurn() {
 }
 
 function renderChart() {
-  if (els.app) els.app.classList.toggle("chart-mode", chartOpen);
-  if (els.board) els.board.hidden = chartOpen;
-  if (els.chartScreen) els.chartScreen.hidden = !chartOpen;
+  const chartSetupMode = chartOpen && chartStage === "setup";
+  if (els.app) els.app.classList.toggle("chart-mode", chartSetupMode);
+  if (els.board) els.board.hidden = chartSetupMode;
+  if (els.chartScreen) els.chartScreen.hidden = !chartSetupMode;
   if (els.chartSetup) els.chartSetup.hidden = !chartOpen || chartStage !== "setup";
-  if (els.chartPlay) els.chartPlay.hidden = !chartOpen || chartStage !== "play";
+  if (els.chartPlay) els.chartPlay.hidden = true;
   if (els.chartBtn) {
     els.chartBtn.classList.toggle("active", chartOpen);
     els.chartBtn.setAttribute("aria-pressed", chartOpen ? "true" : "false");
-    els.chartBtn.textContent = chartOpen ? "Exit chart" : "Chart draft";
+    els.chartBtn.textContent = chartOpen ? "Exit practice" : "Practice draft";
   }
   if (els.phaseKicker) {
-    els.phaseKicker.textContent = chartOpen ? "Chart draft" : "Free draft";
+    els.phaseKicker.textContent = chartOpen ? "Practice draft" : "Free draft";
   }
   if (els.phaseTitle) {
     if (!chartOpen) els.phaseTitle.textContent = "Drop a champion on any slot";
     else if (chartStage === "setup") els.phaseTitle.textContent = "First pick or second pick";
     else {
-      const step = CHART_STEPS[chartCurrentStep()];
-      els.phaseTitle.textContent = step ? step.label : "Draft complete";
+      const steps = chartTurnSteps();
+      const step = steps[0];
+      const label = steps.length > 1 ? steps[0].label + " + " + steps[1].label : step && step.label;
+      els.phaseTitle.textContent = step
+        ? (step.team === chartYou ? "Your turn · " : "Bot turn · ") + label
+        : "Practice complete";
     }
   }
   if (els.chartFirstTeam) els.chartFirstTeam.textContent = state.blue.name || "Blue Side";
@@ -1896,8 +1918,7 @@ function renderChart() {
 }
 
 function renderGrid() {
-  const root =
-    chartOpen && chartStage === "play" && els.chartGrid ? els.chartGrid : els.grid;
+  const root = els.grid;
   if (!root) return;
   const taken = takenIds();
   const visible = visibleChampions();
@@ -1959,7 +1980,7 @@ function renderGrid() {
 }
 
 function renderRecs() {
-  if (chartOpen) return;
+  if (chartOpen && chartStage === "setup") return;
   const recs = recommendedPicks();
   const enemies = enemyIds();
   const allies = allyIds();
@@ -2026,6 +2047,12 @@ function renderRecs() {
       beginDrag(event, { id: rec.champ.id, source: "pool" });
     });
     card.addEventListener("dragend", endDrag);
+    if (chartOpen && chartStage === "play") {
+      card.classList.add("practice-rec");
+      card.addEventListener("click", function () {
+        lockChartChamp(rec.champ.id);
+      });
+    }
     els.recsList.append(card);
   }
 }
