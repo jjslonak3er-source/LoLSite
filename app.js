@@ -12,11 +12,19 @@ const WEIGHT_DEFAULTS = {
   counter: 1,
   pairing: 1,
   unique: 1.25,
-  denial: 0.35,
-  response: 0.75,
 };
-const WEIGHT_STORAGE = "riftDraft.weights.v4";
-const LEGACY_WEIGHT_STORAGE = "riftDraft.weights.v3";
+const BOT_WEIGHTS = Object.freeze({
+  wr: 0.1,
+  pop: 1.2,
+  safety: 0,
+  counter: 0.6,
+  pairing: 1.5,
+  unique: 1.25,
+  denial: 1.4,
+  response: 1,
+});
+const WEIGHT_STORAGE = "riftDraft.weights.v5";
+const LEGACY_WEIGHT_STORAGE = "riftDraft.weights.v4";
 const LEGACY_WEIGHT_STORAGE_V2 = "riftDraft.weights.v2";
 const PAIR_PRIOR_GAMES = 400;
 const UNIQUE_ROLE_SCALE = 8;
@@ -97,16 +105,12 @@ const els = {
   wCounter: document.getElementById("w-counter"),
   wPairing: document.getElementById("w-pairing"),
   wUnique: document.getElementById("w-unique"),
-  wDenial: document.getElementById("w-denial"),
-  wResponse: document.getElementById("w-response"),
   wWrVal: document.getElementById("w-wr-val"),
   wPopVal: document.getElementById("w-pop-val"),
   wSafetyVal: document.getElementById("w-safety-val"),
   wCounterVal: document.getElementById("w-counter-val"),
   wPairingVal: document.getElementById("w-pairing-val"),
   wUniqueVal: document.getElementById("w-unique-val"),
-  wDenialVal: document.getElementById("w-denial-val"),
-  wResponseVal: document.getElementById("w-response-val"),
 };
 
 let patch = "";
@@ -528,8 +532,9 @@ function rebuildOePop() {
   }
 }
 
-function blindPick(id, power) {
+function blindPick(id, power, scoreWeights) {
   if (!power) return null;
+  const mix = scoreWeights || weights;
   const role = power.role;
   const picks = oePicks(id, role);
   const roleGames = oeRoleGames(role);
@@ -544,9 +549,9 @@ function blindPick(id, power) {
     picks: picks,
     pickRate: roleGames ? picks / roleGames : 0,
     score:
-      weights.wr * power.power +
-      weights.pop * popularity +
-      weights.safety * flex.safety,
+      mix.wr * power.power +
+      mix.pop * popularity +
+      mix.safety * flex.safety,
   };
 }
 
@@ -942,9 +947,10 @@ function renderExpect() {
   }
 }
 
-function scoreChampion(id, enemies, allies) {
+function scoreChampion(id, enemies, allies, scoreWeights) {
+  const mix = scoreWeights || weights;
   const power = champPower(id);
-  const blind = power ? blindPick(id, power) : null;
+  const blind = power ? blindPick(id, power, mix) : null;
   const parts = [];
   const pairs = [];
   allies = allies || [];
@@ -1015,7 +1021,7 @@ function scoreChampion(id, enemies, allies) {
     }
   }
   const leaguePop = blind ? blind.popularity : 0;
-  const popShift = org && teamN >= 3 ? weights.pop * TEAM_POP_BLEND * (teamPop - leaguePop) : 0;
+  const popShift = org && teamN >= 3 ? mix.pop * TEAM_POP_BLEND * (teamPop - leaguePop) : 0;
   let rare = 0;
   let teamWr = 0;
   if (org && teamN >= 8) {
@@ -1030,19 +1036,19 @@ function scoreChampion(id, enemies, allies) {
     const conf = teamPicks / (teamPicks + 10);
     const teamPower = (wins / teamPicks - 0.5) * 100 * conf;
     const leaguePower = power ? power.power : 0;
-    teamWr = weights.wr * (teamPower - leaguePower);
+    teamWr = mix.wr * (teamPower - leaguePower);
   }
-  rare *= weights.pop;
+  rare *= mix.pop;
   if (!parts.length && !pairs.length && !blind && !popShift && !comfort && !rare && !teamWr && !response) {
     return null;
   }
   return {
     avg:
       base +
-      weights.counter * counter +
-      weights.pairing * pairing +
-      weights.unique * unique +
-      weights.response * response +
+      mix.counter * counter +
+      mix.pairing * pairing +
+      mix.unique * unique +
+      (mix.response || 0) * response +
       popShift +
       comfort +
       teamWr -
@@ -1164,14 +1170,6 @@ function scoreTooltip(champ, score) {
         formatDelta(weights.counter * score.counter) +
         " vs enemy · ×" +
         weights.counter.toFixed(2)
-    );
-  }
-  if (score.response) {
-    lines.push(
-      "response  " +
-        formatDelta(weights.response * score.response) +
-        " into picked roles · ×" +
-        weights.response.toFixed(2)
     );
   }
   const parts = score.parts || [];
@@ -1660,16 +1658,16 @@ function chartRankedChoices(side, mode) {
       if (taken.has(champ.id)) continue;
       const enemies = enemyIds();
       const allies = allyIds();
-      const score = scoreChampion(champ.id, enemies, allies);
+      const score = scoreChampion(champ.id, enemies, allies, BOT_WEIGHTS);
       let value = score ? score.avg : 0;
       let denial = 0;
       if (mode === "denial") {
         const otherScore = withRecContext(other, function () {
-          const otherScore = scoreChampion(champ.id, enemyIds(), allyIds());
+          const otherScore = scoreChampion(champ.id, enemyIds(), allyIds(), BOT_WEIGHTS);
           return otherScore ? otherScore.avg : 0;
         });
         denial = Math.max(0, value - otherScore);
-        value += weights.denial * denial;
+        value += BOT_WEIGHTS.denial * denial;
       }
       choices.push({
         id: champ.id,
@@ -2326,9 +2324,6 @@ function loadWeights() {
     let saved = JSON.parse(localStorage.getItem(WEIGHT_STORAGE) || "null");
     if (!saved) {
       saved = JSON.parse(localStorage.getItem(LEGACY_WEIGHT_STORAGE) || "null");
-      if (saved && Number(saved.response) === 0.35) {
-        saved.response = WEIGHT_DEFAULTS.response;
-      }
     }
     if (!saved) {
       saved = JSON.parse(localStorage.getItem(LEGACY_WEIGHT_STORAGE_V2) || "null");
@@ -2341,8 +2336,6 @@ function loadWeights() {
       weights.counter = clampWeight(saved.counter, WEIGHT_DEFAULTS.counter);
       weights.pairing = clampWeight(saved.pairing, WEIGHT_DEFAULTS.pairing);
       weights.unique = clampWeight(saved.unique, WEIGHT_DEFAULTS.unique);
-      weights.denial = clampWeight(saved.denial, WEIGHT_DEFAULTS.denial);
-      weights.response = clampWeight(saved.response, WEIGHT_DEFAULTS.response);
     }
   } catch (err) {}
   if (els.wWr) els.wWr.value = String(weights.wr);
@@ -2351,8 +2344,6 @@ function loadWeights() {
   if (els.wCounter) els.wCounter.value = String(weights.counter);
   if (els.wPairing) els.wPairing.value = String(weights.pairing);
   if (els.wUnique) els.wUnique.value = String(weights.unique);
-  if (els.wDenial) els.wDenial.value = String(weights.denial);
-  if (els.wResponse) els.wResponse.value = String(weights.response);
   syncWeightLabels();
 }
 
@@ -2369,8 +2360,6 @@ function syncWeightLabels() {
   if (els.wCounterVal) els.wCounterVal.textContent = weights.counter.toFixed(2);
   if (els.wPairingVal) els.wPairingVal.textContent = weights.pairing.toFixed(2);
   if (els.wUniqueVal) els.wUniqueVal.textContent = weights.unique.toFixed(2);
-  if (els.wDenialVal) els.wDenialVal.textContent = weights.denial.toFixed(2);
-  if (els.wResponseVal) els.wResponseVal.textContent = weights.response.toFixed(2);
 }
 
 function readWeightSliders() {
@@ -2380,8 +2369,6 @@ function readWeightSliders() {
   weights.counter = clampWeight(els.wCounter && els.wCounter.value, WEIGHT_DEFAULTS.counter);
   weights.pairing = clampWeight(els.wPairing && els.wPairing.value, WEIGHT_DEFAULTS.pairing);
   weights.unique = clampWeight(els.wUnique && els.wUnique.value, WEIGHT_DEFAULTS.unique);
-  weights.denial = clampWeight(els.wDenial && els.wDenial.value, WEIGHT_DEFAULTS.denial);
-  weights.response = clampWeight(els.wResponse && els.wResponse.value, WEIGHT_DEFAULTS.response);
   syncWeightLabels();
   saveWeights();
   renderRecs();
@@ -2390,7 +2377,7 @@ function readWeightSliders() {
 
 function bindWeights() {
   loadWeights();
-  ["wWr", "wPop", "wSafety", "wCounter", "wPairing", "wUnique", "wDenial", "wResponse"].forEach(function (key) {
+  ["wWr", "wPop", "wSafety", "wCounter", "wPairing", "wUnique"].forEach(function (key) {
     if (!els[key]) return;
     els[key].addEventListener("input", readWeightSliders);
   });
