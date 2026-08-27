@@ -18,7 +18,7 @@ const BOT_WEIGHTS = Object.freeze({
   pop: 1.2,
   safety: 0,
   counter: 0.6,
-  pairing: 1.5,
+  pairing: 0.75,
   unique: 1.25,
   denial: 1.4,
   response: 1,
@@ -698,6 +698,15 @@ function roleResponse(id) {
   return response;
 }
 
+function botResponseFactor() {
+  if (!chartOpen || chartStage !== "play" || !chartYou) return 1;
+  const playerPicks = state[chartYou].picks.filter(Boolean).length;
+  if (playerPicks <= 1) return 0.1;
+  if (playerPicks === 2) return 0.35;
+  if (playerPicks === 3) return 0.65;
+  return 1;
+}
+
 function matchupEntry(us, them) {
   if (counters[us] && counters[us][them]) return counters[us][them];
   return null;
@@ -994,7 +1003,8 @@ function scoreChampion(id, enemies, allies, scoreWeights) {
   for (let i = 0; i < parts.length; i += 1) counter += parts[i].weighted;
   let pairing = 0;
   for (let i = 0; i < pairs.length; i += 1) pairing += pairs[i].weighted;
-  const response = roleResponse(id);
+  const responseFactor = mix === BOT_WEIGHTS ? botResponseFactor() : 1;
+  const response = roleResponse(id) * responseFactor;
   const filled = filledRoles();
   const roles = roleConflict(id, filled);
   const primary = pickPrimaryRole(id);
