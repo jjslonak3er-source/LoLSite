@@ -7,6 +7,7 @@ const POWER_PRIOR_GAMES = 4000;
 const SHARP_COUNTER_DELTA = -2;
 const WEIGHT_DEFAULTS = { wr: 1, pop: 1, safety: 1, counter: 1, pairing: 1, unique: 1 };
 const WEIGHT_STORAGE = "riftDraft.weights.v2";
+const CHART_NOTES_KEY = "riftDraft.chartNotes";
 const PAIR_PRIOR_GAMES = 400;
 const UNIQUE_ROLE_SCALE = 8;
 const ROLE_FILL_LOCK = 0.75;
@@ -38,6 +39,11 @@ const els = {
   redPicks: document.getElementById("red-picks"),
   search: document.getElementById("search"),
   tags: document.getElementById("tag-filters"),
+  pool: document.querySelector(".pool"),
+  chart: document.getElementById("draft-chart"),
+  chartBody: document.getElementById("draft-chart-body"),
+  chartBtn: document.getElementById("chart-btn"),
+  chartAngles: document.getElementById("chart-angles"),
   grid: document.getElementById("grid"),
   undo: document.getElementById("undo-btn"),
   reset: document.getElementById("reset-btn"),
@@ -95,6 +101,24 @@ let teamIndex = {};
 let teamNames = [];
 
 let state = emptyState();
+let chartOpen = false;
+let chartNotes = loadChartNotes();
+
+function loadChartNotes() {
+  try {
+    const raw = localStorage.getItem(CHART_NOTES_KEY);
+    const parsed = raw ? JSON.parse(raw) : {};
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
+  } catch (error) {
+    return {};
+  }
+}
+
+function saveChartNotes() {
+  try {
+    localStorage.setItem(CHART_NOTES_KEY, JSON.stringify(chartNotes));
+  } catch (error) {}
+}
 
 function emptyTeam(name) {
   return {
@@ -1478,6 +1502,152 @@ function renderPicks(team, root) {
   }
 }
 
+function createChartSlot(team, kind, index) {
+  const slot = document.createElement("div");
+  const id = slotList(team, kind)[index];
+  const label = (kind === "ban" ? "B" : "P") + (index + 1);
+  slot.className = "chart-slot chart-" + kind + " chart-" + team;
+  if (id) {
+    slot.classList.add("filled");
+    slot.draggable = true;
+    slot.title = champName(id) + " · " + label + " — drag to move, double-click to remove";
+    const img = document.createElement("img");
+    img.src = portrait(id);
+    img.alt = champName(id);
+    img.draggable = false;
+    slot.append(img);
+    slot.addEventListener("dragstart", function (event) {
+      beginDrag(event, { id: id, team: team, kind: kind, index: index });
+    });
+    slot.addEventListener("dragend", endDrag);
+  } else {
+    slot.title = "Drop a " + kind + " — " + (team === "blue" ? "Blue" : "Red") + " " + label;
+    const empty = document.createElement("span");
+    empty.textContent = label;
+    slot.append(empty);
+  }
+  bindSlotDrop(slot, team, kind, index);
+  return slot;
+}
+
+function chartNoteInput(key, placeholder) {
+  const input = document.createElement("input");
+  input.type = "text";
+  input.className = "chart-note";
+  input.setAttribute("data-note", key);
+  input.placeholder = placeholder || "Angle";
+  input.maxLength = 120;
+  input.value = chartNotes[key] || "";
+  input.addEventListener("input", function () {
+    chartNotes[key] = input.value;
+    saveChartNotes();
+  });
+  return input;
+}
+
+function chartBanSide(team, start, count) {
+  const wrap = document.createElement("div");
+  wrap.className = "chart-ban-side chart-" + team;
+  const label = document.createElement("span");
+  label.textContent = team === "blue" ? "Blue" : "Red";
+  wrap.append(label);
+  for (let i = 0; i < count; i += 1) {
+    wrap.append(createChartSlot(team, "ban", start + i));
+  }
+  return wrap;
+}
+
+function chartPickRow(team, label, slots, noteKey) {
+  const row = document.createElement("div");
+  row.className = "chart-row chart-" + team;
+  const name = document.createElement("span");
+  name.className = "chart-row-label";
+  name.textContent = label;
+  const cells = document.createElement("div");
+  cells.className = "chart-row-slots";
+  for (let i = 0; i < slots.length; i += 1) {
+    cells.append(createChartSlot(team, "pick", slots[i]));
+  }
+  row.append(name, cells, chartNoteInput(noteKey, "Angle"));
+  return row;
+}
+
+function chartPhase(title) {
+  const phase = document.createElement("section");
+  phase.className = "chart-phase";
+  const heading = document.createElement("h3");
+  heading.textContent = title;
+  phase.append(heading);
+  return phase;
+}
+
+function renderChart() {
+  if (!els.chart || !els.chartBody) return;
+  if (els.pool) els.pool.classList.toggle("chart-open", chartOpen);
+  els.chart.hidden = !chartOpen;
+  if (els.chartBtn) {
+    els.chartBtn.classList.toggle("active", chartOpen);
+    els.chartBtn.setAttribute("aria-pressed", chartOpen ? "true" : "false");
+  }
+  if (els.chartAngles && document.activeElement !== els.chartAngles) {
+    els.chartAngles.value = chartNotes.overall || "";
+  }
+  if (!chartOpen) return;
+
+  const active = document.activeElement;
+  const focusKey =
+    active && active.getAttribute && active.classList.contains("chart-note")
+      ? active.getAttribute("data-note")
+      : null;
+  const focusVal = focusKey ? active.value : null;
+  const selStart = focusKey ? active.selectionStart : null;
+  const selEnd = focusKey ? active.selectionEnd : null;
+
+  els.chartBody.innerHTML = "";
+
+  const ban1 = chartPhase("Ban 1");
+  const ban1Row = document.createElement("div");
+  ban1Row.className = "chart-bans";
+  ban1Row.append(chartBanSide("blue", 0, 3), chartBanSide("red", 0, 3));
+  ban1.append(ban1Row);
+
+  const pick1 = chartPhase("Pick 1");
+  pick1.append(
+    chartPickRow("blue", "Blue 1", [0], "b1"),
+    chartPickRow("red", "Red 1–2", [0, 1], "r12"),
+    chartPickRow("blue", "Blue 2–3", [1, 2], "b23"),
+    chartPickRow("red", "Red 3", [2], "r3")
+  );
+
+  const ban2 = chartPhase("Ban 2");
+  const ban2Row = document.createElement("div");
+  ban2Row.className = "chart-bans";
+  ban2Row.append(chartBanSide("red", 3, 2), chartBanSide("blue", 3, 2));
+  ban2.append(ban2Row);
+
+  const pick2 = chartPhase("Pick 2");
+  pick2.append(
+    chartPickRow("red", "Red 4", [3], "r4"),
+    chartPickRow("blue", "Blue 4–5", [3, 4], "b45"),
+    chartPickRow("red", "Red 5", [4], "r5")
+  );
+
+  els.chartBody.append(ban1, pick1, ban2, pick2);
+
+  if (focusKey) {
+    const input = els.chartBody.querySelector('.chart-note[data-note="' + focusKey + '"]');
+    if (input) {
+      if (focusVal != null) input.value = focusVal;
+      input.focus();
+      if (selStart != null && selEnd != null) {
+        try {
+          input.setSelectionRange(selStart, selEnd);
+        } catch (error) {}
+      }
+    }
+  }
+}
+
 function renderGrid() {
   const taken = takenIds();
   const visible = visibleChampions();
@@ -1750,6 +1920,7 @@ function render() {
   renderBans("red", els.redBans);
   renderPicks("blue", els.bluePicks);
   renderPicks("red", els.redPicks);
+  renderChart();
   renderRecs();
   renderGrid();
   renderUsed();
@@ -1876,6 +2047,18 @@ function bind() {
   els.reset.addEventListener("click", resetGame);
   els.next.addEventListener("click", nextGame);
   els.swap.addEventListener("click", swapSides);
+  if (els.chartBtn) {
+    els.chartBtn.addEventListener("click", function () {
+      chartOpen = !chartOpen;
+      renderChart();
+    });
+  }
+  if (els.chartAngles) {
+    els.chartAngles.addEventListener("input", function () {
+      chartNotes.overall = els.chartAngles.value;
+      saveChartNotes();
+    });
+  }
   els.recsBlue.addEventListener("click", function () {
     recSide = "blue";
     renderRecs();

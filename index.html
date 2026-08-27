@@ -15,7 +15,7 @@
       href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&family=Sora:wght@600;700&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="styles.css?v=31" />
+    <link rel="stylesheet" href="styles.css?v=52" />
     <script>
       window.addEventListener("error", function (event) {
         var status = document.getElementById("boot-status");
@@ -149,8 +149,25 @@
             </div>
             <div id="recs-list" class="recs-list"></div>
           </div>
-          <div id="grid" class="grid"></div>
+          <div class="pool-main">
+            <div id="draft-chart" class="draft-chart" hidden>
+              <div class="draft-chart-head">
+                <p class="draft-chart-kicker">Draft chart</p>
+                <p class="muted">Competitive pick/ban order. Drop champions here or on the side boards.</p>
+              </div>
+              <textarea
+                id="chart-angles"
+                class="chart-angles"
+                rows="2"
+                maxlength="400"
+                placeholder="Overall angles — win conditions, flex, blind, etc."
+              ></textarea>
+              <div id="draft-chart-body" class="draft-chart-body"></div>
+            </div>
+            <div id="grid" class="grid"></div>
+          </div>
           <div class="pool-footer">
+            <button id="chart-btn" type="button" aria-pressed="false">Chart draft</button>
             <button id="undo-btn" type="button">Undo</button>
             <button id="reset-btn" type="button">Reset game</button>
             <button id="next-btn" type="button">Next game</button>
@@ -217,6 +234,6 @@
     <script src="pro-games.js?v=4"></script>
     <script src="player-ratings.js?v=16"></script>
     <script src="predict.js?v=4"></script>
-    <script src="app.js?v=5" onerror="document.getElementById('boot-status').textContent='Could not load app.js'"></script>
+    <script src="app.js?v=6" onerror="document.getElementById('boot-status').textContent='Could not load app.js'"></script>
   </body>
 </html>

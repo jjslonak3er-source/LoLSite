@@ -453,7 +453,8 @@ select:hover,
 }
 
 .ban.drop-hover,
-.pick.drop-hover {
+.pick.drop-hover,
+.chart-slot.drop-hover {
   border-color: var(--accent);
   box-shadow: 0 0 0 1px var(--accent), 0 0 18px rgba(197, 208, 216, 0.18);
 }
@@ -507,7 +508,8 @@ select:hover,
 
 .pick.is-dragging,
 .ban.is-dragging,
-.champ.is-dragging {
+.champ.is-dragging,
+.chart-slot.is-dragging {
   opacity: 0.4;
 }
 
@@ -906,6 +908,205 @@ select:hover,
   filter: grayscale(1) brightness(0.38);
 }
 
+.pool-main {
+  min-height: 0;
+  display: grid;
+  grid-template-rows: 1fr;
+  gap: 10px;
+}
+
+.pool.chart-open .pool-main {
+  grid-template-rows: minmax(200px, 0.95fr) minmax(120px, 1fr);
+}
+
+.draft-chart {
+  min-height: 0;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--slot);
+}
+
+.draft-chart-head {
+  display: grid;
+  gap: 2px;
+}
+
+.draft-chart-kicker {
+  margin: 0;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--gold-bright);
+}
+
+.draft-chart-head .muted {
+  margin: 0;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.chart-angles {
+  width: 100%;
+  resize: vertical;
+  min-height: 44px;
+  max-height: 90px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--panel-2);
+  color: var(--text);
+  outline: none;
+}
+
+.chart-angles:focus,
+.chart-note:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px rgba(197, 208, 216, 0.08);
+}
+
+.draft-chart-body {
+  display: grid;
+  gap: 10px;
+}
+
+.chart-phase {
+  display: grid;
+  gap: 6px;
+}
+
+.chart-phase h3 {
+  margin: 0;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.chart-bans {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.chart-ban-side {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.chart-ban-side span {
+  flex: 0 0 36px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.chart-ban-side.chart-blue span {
+  color: var(--blue);
+}
+
+.chart-ban-side.chart-red span {
+  color: var(--red);
+}
+
+.chart-row {
+  display: grid;
+  grid-template-columns: 68px auto minmax(0, 1fr);
+  gap: 8px;
+  align-items: center;
+}
+
+.chart-row-label {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.chart-row.chart-blue .chart-row-label {
+  color: var(--blue);
+}
+
+.chart-row.chart-red .chart-row-label {
+  color: var(--red);
+}
+
+.chart-row-slots {
+  display: flex;
+  gap: 4px;
+}
+
+.chart-note {
+  width: 100%;
+  min-width: 0;
+  padding: 6px 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--panel-2);
+  color: var(--text);
+  font-size: 12px;
+  outline: none;
+}
+
+.chart-slot {
+  width: 38px;
+  height: 38px;
+  flex: 0 0 38px;
+  border-radius: 8px;
+  border: 1px dashed #2a313a;
+  background: var(--panel-2);
+  overflow: hidden;
+  position: relative;
+  display: grid;
+  place-items: center;
+}
+
+.chart-slot span {
+  font-size: 9px;
+  font-weight: 700;
+  color: var(--muted);
+  letter-spacing: 0.04em;
+}
+
+.chart-slot.filled {
+  border-style: solid;
+  border-color: #3a434e;
+  cursor: grab;
+}
+
+.chart-slot img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.chart-slot.chart-ban.filled::after {
+  content: "";
+  position: absolute;
+  inset: 16px -6px auto;
+  height: 2px;
+  background: var(--red);
+  transform: rotate(-28deg);
+  pointer-events: none;
+}
+
+.chart-slot.chart-blue.filled {
+  box-shadow: inset 0 0 0 1px rgba(90, 168, 255, 0.35);
+}
+
+.chart-slot.chart-red.filled {
+  box-shadow: inset 0 0 0 1px rgba(239, 91, 110, 0.4);
+}
+
 .pool-footer {
   display: flex;
   flex-wrap: wrap;
@@ -924,6 +1125,12 @@ select:hover,
   border-color: var(--accent);
   color: var(--gold-bright);
   background: rgba(197, 208, 216, 0.06);
+}
+
+.pool-footer button.active {
+  border-color: var(--accent);
+  color: var(--gold-bright);
+  background: rgba(197, 208, 216, 0.14);
 }
 
 .used-bar {
@@ -1960,6 +2167,18 @@ select:hover,
     max-height: 520px;
   }
 
+  .pool.chart-open .pool-main {
+    grid-template-rows: auto minmax(180px, 1fr);
+  }
+
+  .chart-bans {
+    grid-template-columns: 1fr;
+  }
+
+  .chart-row {
+    grid-template-columns: 64px auto 1fr;
+  }
+
   .pro-board {
     display: flex;
     flex-direction: column;
@@ -1996,7 +2215,7 @@ select:hover,
 
 .team-filter-row {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
   align-items: center;
   gap: 8px 12px;
 }
@@ -2010,7 +2229,8 @@ select:hover,
 }
 
 .player-layout.is-team .team-league-row #team-views,
-.team-filter-row #team-sides {
+.team-filter-row #team-sides,
+.team-filter-row #team-series {
   padding-left: 10px;
   border-left: 1px solid var(--line);
 }
@@ -2128,7 +2348,8 @@ select:hover,
   }
 
   .player-layout.is-team .team-league-row #team-views,
-  .team-filter-row #team-sides {
+  .team-filter-row #team-sides,
+  .team-filter-row #team-series {
     padding-left: 0;
     border-left: 0;
   }
