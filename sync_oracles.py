@@ -55,6 +55,7 @@ POS = {
 }
 
 MAJOR_LEAGUES = ("LPL", "LCK", "LEC", "LCS")
+EARLY_PICK_SLOTS = 3
 
 ROOT = Path(__file__).resolve().parent
 DOWNLOADS = Path.home() / "Downloads"
@@ -477,6 +478,9 @@ def convert(csv_path: Path, champions_js: Path, recent_days: int = 60) -> dict:
     stats: dict[str, dict[str, dict[str, int]]] = defaultdict(
         lambda: defaultdict(lambda: {"picks": 0, "wins": 0})
     )
+    pick_order: dict[str, dict[str, dict[str, int]]] = defaultdict(
+        lambda: defaultdict(lambda: {"picks": 0, "early": 0})
+    )
     pairs = 0
     for rows in by_game.values():
         keyed: dict[tuple[str, str], tuple[str, int]] = {}
@@ -502,6 +506,19 @@ def convert(csv_path: Path, champions_js: Path, recent_days: int = 60) -> dict:
                 entry["games"] += 1
                 entry["wins"] += win
                 pairs += 1
+
+        for side in ("Blue", "Red"):
+            team = team_by_game.get(rows[0]["gid"], {}).get(side) or {}
+            picks = team.get("pk") or []
+            by_id = {row["id"]: row for row in rows if row["side"] == side}
+            for slot, champ_id in enumerate(picks[:5]):
+                row = by_id.get(champ_id)
+                if not champ_id or not row:
+                    continue
+                order = pick_order[champ_id][row["pos"]]
+                order["picks"] += 1
+                if slot < EARLY_PICK_SLOTS:
+                    order["early"] += 1
 
     compact: dict[str, dict[str, dict[str, float | int]]] = {}
     for us, vs in matchups.items():
@@ -570,6 +587,10 @@ def convert(csv_path: Path, champions_js: Path, recent_days: int = 60) -> dict:
         "missing": sorted(missing),
         "matchups": compact,
         "positions": positions,
+        "pick_order": {
+            champ_id: {role: dict(order) for role, order in roles.items()}
+            for champ_id, roles in pick_order.items()
+        },
         "recent": {
             "days": recent_days,
             "from": cutoff,
