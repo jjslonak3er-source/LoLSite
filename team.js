@@ -268,30 +268,111 @@ function countTotal(counts) {
   return n;
 }
 
-function identityChampIds(counts, enemyBans) {
-  const seen = {};
-  const ids = [];
-  const picked = Object.keys(counts || {});
-  for (let i = 0; i < picked.length; i += 1) {
-    const id = picked[i];
-    if (!id || seen[id]) continue;
-    seen[id] = true;
-    ids.push(id);
+function identityDetailTable(counts, wins, rolesByChamp, available) {
+  counts = counts || {};
+  wins = wins || {};
+  available = available || {};
+  const total = countTotal(counts);
+  const rows = [];
+  const ids = Object.keys(counts);
+  for (let i = 0; i < ids.length; i += 1) {
+    const id = ids[i];
+    const games = counts[id] || 0;
+    if (!games) continue;
+    const open = available[id] || 0;
+    const role = rolesByChamp ? mostCommon(rolesByChamp[id] || {}) || "" : "";
+    rows.push({
+      id: id,
+      name: champName(id),
+      role: role ? role.toUpperCase() : "—",
+      roleOrd: role ? roleOrder(role) : 99,
+      games: games,
+      wr: (wins[id] || 0) / games,
+      share: total ? games / total : null,
+      presence: open ? games / open : null,
+      open: open,
+    });
   }
-  const banned = Object.keys(enemyBans || {});
-  for (let i = 0; i < banned.length; i += 1) {
-    const id = banned[i];
-    if (!id || seen[id] || !enemyBans[id]) continue;
-    seen[id] = true;
-    ids.push(id);
-  }
-  ids.sort(function (a, b) {
-    const pa = (counts[a] || 0) + (enemyBans[a] || 0);
-    const pb = (counts[b] || 0) + (enemyBans[b] || 0);
-    if (pb !== pa) return pb - pa;
-    return (counts[b] || 0) - (counts[a] || 0);
+
+  const table = document.createElement("table");
+  table.className = "pro-table identity-nested";
+  const thead = document.createElement("thead");
+  const tbody = document.createElement("tbody");
+  table.append(thead, tbody);
+  table.addEventListener("click", function (event) {
+    event.stopPropagation();
   });
-  return ids;
+  const cols = rolesByChamp
+    ? [
+        { key: "name", label: "Champ" },
+        { key: "roleOrd", label: "Role" },
+        { key: "games", label: "Games", num: true },
+        { key: "wr", label: "WR", num: true },
+        { key: "share", label: "Share", num: true },
+        { key: "presence", label: "Presence", num: true },
+      ]
+    : [
+        { key: "name", label: "Champ" },
+        { key: "games", label: "Games", num: true },
+        { key: "wr", label: "WR", num: true },
+        { key: "share", label: "Share", num: true },
+        { key: "presence", label: "Presence", num: true },
+      ];
+  let sortKey = "games";
+  let sortDir = -1;
+
+  function paint() {
+    setHead(thead, cols, sortKey, sortDir, function (key) {
+      if (sortKey === key) sortDir *= -1;
+      else {
+        sortKey = key;
+        sortDir = key === "name" || key === "roleOrd" ? 1 : -1;
+      }
+      paint();
+    });
+    tbody.innerHTML = "";
+    if (!rows.length) {
+      emptyRow(tbody, cols.length, "No picks in this slice.");
+      return;
+    }
+    const shown = sortRows(rows.slice(), sortKey, sortDir);
+    for (let i = 0; i < shown.length; i += 1) {
+      const row = shown[i];
+      const tr = document.createElement("tr");
+      const champ = document.createElement("td");
+      champ.append(champCell(row.id));
+      tr.append(champ);
+      if (rolesByChamp) {
+        const roleCell = document.createElement("td");
+        roleCell.className = "pro-role";
+        roleCell.textContent = row.role;
+        tr.append(roleCell);
+      }
+      const gamesCell = document.createElement("td");
+      gamesCell.className = "num";
+      gamesCell.textContent = String(row.games);
+      const wrCell = document.createElement("td");
+      wrCell.className = "num " + (row.wr >= 0.5 ? "wr-up" : "wr-down");
+      wrCell.textContent = fmtPct(row.wr);
+      const shareCell = document.createElement("td");
+      shareCell.className = "num";
+      shareCell.textContent = fmtPct(row.share);
+      const presCell = document.createElement("td");
+      presCell.className = "num";
+      presCell.textContent = fmtPct(row.presence);
+      presCell.title =
+        "Picked in " +
+        row.games +
+        " of " +
+        row.open +
+        " games where it was still available (not banned by either team before this pick)";
+      tr.append(gamesCell, wrCell, shareCell, presCell);
+      tbody.append(tr);
+    }
+  }
+
+  paint();
+  return table;
 }
 
 function champAvailableAtSlot(game, champId, slot) {
@@ -328,79 +409,6 @@ function identityAvailable(games, teamName, champIds, slots, roleIndex) {
     }
   }
   return avail;
-}
-
-function identityDetailTable(counts, wins, rolesByChamp, enemyBans, available) {
-  counts = counts || {};
-  wins = wins || {};
-  enemyBans = enemyBans || {};
-  available = available || {};
-  const ids = identityChampIds(counts, enemyBans);
-  const total = countTotal(counts);
-  const table = document.createElement("table");
-  table.className = "pro-table identity-nested";
-  const thead = document.createElement("thead");
-  const head = document.createElement("tr");
-  const headers = rolesByChamp
-    ? ["Champ", "Role", "Games", "WR", "Share", "Ban", "Presence"]
-    : ["Champ", "Games", "WR", "Share", "Ban", "Presence"];
-  for (let i = 0; i < headers.length; i += 1) {
-    const th = document.createElement("th");
-    th.textContent = headers[i];
-    if (i >= (rolesByChamp ? 2 : 1)) th.className = "sort-num";
-    head.append(th);
-  }
-  thead.append(head);
-  const tbody = document.createElement("tbody");
-  if (!ids.length) {
-    emptyRow(tbody, headers.length, "No picks or bans in this slice.");
-  } else {
-    for (let i = 0; i < ids.length; i += 1) {
-      const id = ids[i];
-      const games = counts[id] || 0;
-      const banned = enemyBans[id] || 0;
-      const open = available[id] || 0;
-      const wr = games ? (wins[id] || 0) / games : null;
-      const share = total ? games / total : null;
-      const presence = open ? games / open : null;
-      const tr = document.createElement("tr");
-      const champ = document.createElement("td");
-      champ.append(champCell(id));
-      tr.append(champ);
-      if (rolesByChamp) {
-        const roleCell = document.createElement("td");
-        roleCell.className = "pro-role";
-        roleCell.textContent = (mostCommon(rolesByChamp[id] || {}) || "—").toUpperCase();
-        tr.append(roleCell);
-      }
-      const gamesCell = document.createElement("td");
-      gamesCell.className = "num";
-      gamesCell.textContent = games ? String(games) : "0";
-      const wrCell = document.createElement("td");
-      wrCell.className = "num " + (wr >= 0.5 ? "wr-up" : wr != null ? "wr-down" : "");
-      wrCell.textContent = fmtPct(wr);
-      const shareCell = document.createElement("td");
-      shareCell.className = "num";
-      shareCell.textContent = fmtPct(share);
-      const banCell = document.createElement("td");
-      banCell.className = "num";
-      banCell.textContent = banned ? String(banned) : "0";
-      banCell.title = "Times opponents banned this champ in this slice";
-      const presCell = document.createElement("td");
-      presCell.className = "num";
-      presCell.textContent = fmtPct(presence);
-      presCell.title =
-        "Picked in " +
-        games +
-        " of " +
-        open +
-        " games where it was still available (not banned by either team before this pick)";
-      tr.append(gamesCell, wrCell, shareCell, banCell, presCell);
-      tbody.append(tr);
-    }
-  }
-  table.append(thead, tbody);
-  return table;
 }
 
 function addCountMap(into, from) {
@@ -457,21 +465,10 @@ function pickOrderGroups() {
   ];
 }
 
-function sliceEnemyBans(counts, enemyBans) {
-  const out = {};
-  const ids = Object.keys(counts || {});
-  for (let i = 0; i < ids.length; i += 1) {
-    const n = enemyBans[ids[i]] || 0;
-    if (n) out[ids[i]] = n;
-  }
-  return out;
-}
-
-function identityExpandable(label, counts, wins, extra, colSpan, rolesByChamp, enemyBans, available) {
+function identityExpandable(label, counts, wins, extra, colSpan, rolesByChamp, available) {
   const frag = document.createDocumentFragment();
   const summary = identityChampRow(label, counts, wins, extra);
-  const bans = enemyBans || {};
-  const ids = identityChampIds(counts, bans);
+  const ids = Object.keys(counts || {});
   if (!ids.length) {
     frag.append(summary);
     return frag;
@@ -489,7 +486,7 @@ function identityExpandable(label, counts, wins, extra, colSpan, rolesByChamp, e
   detail.hidden = true;
   const td = document.createElement("td");
   td.colSpan = colSpan;
-  td.append(identityDetailTable(counts, wins, rolesByChamp, bans, available));
+  td.append(identityDetailTable(counts, wins, rolesByChamp, available));
   detail.append(td);
   function toggle(event) {
     event.preventDefault();
@@ -1207,7 +1204,6 @@ function renderTeamIdentity(rec) {
           roleCell,
           6,
           merged.champRoles,
-          sliceEnemyBans(merged.counts, stats.enemyBans),
           identityAvailable(rec.games, rec.name, Object.keys(merged.counts), group.slots)
         )
       );
@@ -1238,7 +1234,6 @@ function renderTeamIdentity(rec) {
         null,
         5,
         null,
-        sliceEnemyBans(stats.roles[r], stats.enemyBans),
         identityAvailable(rec.games, rec.name, Object.keys(stats.roles[r]), null, r)
       )
     );

@@ -2102,7 +2102,22 @@ select:hover,
 .identity-nested th {
   position: static;
   background: transparent;
-  cursor: default;
+  cursor: pointer;
+}
+
+.identity-nested th.sort-asc::after,
+.identity-nested th.sort-desc::after {
+  margin-left: 4px;
+  opacity: 0.7;
+  font-size: 9px;
+}
+
+.identity-nested th.sort-asc::after {
+  content: "▲";
+}
+
+.identity-nested th.sort-desc::after {
+  content: "▼";
 }
 
 @media (max-width: 900px) {
