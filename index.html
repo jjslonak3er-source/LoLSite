@@ -15,7 +15,7 @@
       href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&family=Sora:wght@600;700&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="styles.css?v=52" />
+    <link rel="stylesheet" href="styles.css?v=53" />
     <script>
       window.addEventListener("error", function (event) {
         var status = document.getElementById("boot-status");
@@ -60,6 +60,9 @@
         </div>
 
         <div class="top-actions">
+          <button id="chart-btn" type="button" class="chart-toggle" aria-pressed="false">
+            Chart draft
+          </button>
           <label class="toggle">
             <input id="fearless-toggle" type="checkbox" />
             <span class="switch" aria-hidden="true"></span>
@@ -167,7 +170,6 @@
             <div id="grid" class="grid"></div>
           </div>
           <div class="pool-footer">
-            <button id="chart-btn" type="button" aria-pressed="false">Chart draft</button>
             <button id="undo-btn" type="button">Undo</button>
             <button id="reset-btn" type="button">Reset game</button>
             <button id="next-btn" type="button">Next game</button>
@@ -234,6 +236,6 @@
     <script src="pro-games.js?v=4"></script>
     <script src="player-ratings.js?v=16"></script>
     <script src="predict.js?v=4"></script>
-    <script src="app.js?v=6" onerror="document.getElementById('boot-status').textContent='Could not load app.js'"></script>
+    <script src="app.js?v=7" onerror="document.getElementById('boot-status').textContent='Could not load app.js'"></script>
   </body>
 </html>

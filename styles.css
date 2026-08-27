@@ -228,6 +228,24 @@ input[type="search"],
   flex-wrap: wrap;
 }
 
+.top-actions .chart-toggle {
+  padding: 6px 12px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  background: var(--panel-2);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+}
+
+.top-actions .chart-toggle:hover,
+.top-actions .chart-toggle.active {
+  border-color: var(--accent);
+  color: var(--gold-bright);
+  background: rgba(197, 208, 216, 0.14);
+}
+
 .toggle {
   display: flex;
   align-items: center;
@@ -915,8 +933,16 @@ select:hover,
   gap: 10px;
 }
 
+.pool.chart-open {
+  grid-template-rows: auto 1fr auto;
+}
+
+.pool.chart-open #recs {
+  display: none !important;
+}
+
 .pool.chart-open .pool-main {
-  grid-template-rows: minmax(200px, 0.95fr) minmax(120px, 1fr);
+  grid-template-rows: minmax(280px, 1.6fr) minmax(90px, 0.5fr);
 }
 
 .draft-chart {
