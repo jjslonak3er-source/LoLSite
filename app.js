@@ -30,6 +30,8 @@ const PAIR_PRIOR_GAMES = 400;
 const UNIQUE_ROLE_SCALE = 8;
 const UNIQUE_PRIMARY_SCALE = 0.4;
 const RESPONSE_ROLE_BASE = 4;
+const RESPONSE_PARTNER_STYLE = 2.5;
+const RESPONSE_TANK_STYLE = -1.25;
 const ROLE_FILL_LOCK = 0.75;
 const POPULARITY_SCALE = 4.7;
 const TEAM_POP_BLEND = 1;
@@ -688,6 +690,19 @@ function responseRoleFit(rates, role) {
   return rates[role] || 0;
 }
 
+function responseLaneStyle(id, rates, role) {
+  if (role !== "adc" && role !== "sup") return 0;
+  const partnerFit = role === "adc" ? rates.sup || 0 : rates.adc || 0;
+  if (!partnerFit) return 0;
+  const champ = champMap.get(id);
+  const tags = (champ && champ.tags) || [];
+  if (tags.indexOf("Tank") !== -1) return RESPONSE_TANK_STYLE * partnerFit;
+  if (tags.indexOf("Mage") !== -1 || tags.indexOf("Marksman") !== -1) {
+    return RESPONSE_PARTNER_STYLE * partnerFit;
+  }
+  return 0;
+}
+
 function roleResponse(id) {
   const other = recSide === "blue" ? "red" : "blue";
   const enemyTeam = state[other];
@@ -700,7 +715,7 @@ function roleResponse(id) {
     const fit = responseRoleFit(rates, role);
     if (!fit) continue;
     const delta = matchupDelta(id, enemy);
-    response += RESPONSE_ROLE_BASE * fit;
+    response += RESPONSE_ROLE_BASE * fit + responseLaneStyle(id, rates, role);
     if (delta != null) response += delta * fit;
   }
   return response;
