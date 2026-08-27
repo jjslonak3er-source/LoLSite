@@ -7,7 +7,6 @@ const POWER_PRIOR_GAMES = 4000;
 const SHARP_COUNTER_DELTA = -2;
 const WEIGHT_DEFAULTS = { wr: 1, pop: 1, safety: 1, counter: 1, pairing: 1, unique: 1 };
 const WEIGHT_STORAGE = "riftDraft.weights.v2";
-const CHART_NOTES_KEY = "riftDraft.chartNotes";
 const PAIR_PRIOR_GAMES = 400;
 const UNIQUE_ROLE_SCALE = 8;
 const ROLE_FILL_LOCK = 0.75;
@@ -27,6 +26,24 @@ const els = {
   fearless: document.getElementById("fearless-toggle"),
   series: document.getElementById("series-select"),
   gameLabel: document.getElementById("game-label"),
+  phaseKicker: document.getElementById("phase-kicker"),
+  phaseTitle: document.getElementById("phase-title"),
+  board: document.getElementById("draft-board"),
+  chartScreen: document.getElementById("chart-screen"),
+  chartSetup: document.getElementById("chart-setup"),
+  chartPlay: document.getElementById("chart-play"),
+  chartFirst: document.getElementById("chart-first"),
+  chartSecond: document.getElementById("chart-second"),
+  chartFirstTeam: document.getElementById("chart-first-team"),
+  chartSecondTeam: document.getElementById("chart-second-team"),
+  chartTurn: document.getElementById("chart-turn"),
+  chartTimeline: document.getElementById("chart-timeline"),
+  chartSearch: document.getElementById("chart-search"),
+  chartGrid: document.getElementById("chart-grid"),
+  chartRecs: document.getElementById("chart-recs"),
+  chartUndo: document.getElementById("chart-undo"),
+  chartReset: document.getElementById("chart-reset"),
+  chartBtn: document.getElementById("chart-btn"),
   blueName: document.getElementById("blue-name"),
   redName: document.getElementById("red-name"),
   blueTeamMenu: document.getElementById("blue-team-menu"),
@@ -40,10 +57,6 @@ const els = {
   search: document.getElementById("search"),
   tags: document.getElementById("tag-filters"),
   pool: document.querySelector(".pool"),
-  chart: document.getElementById("draft-chart"),
-  chartBody: document.getElementById("draft-chart-body"),
-  chartBtn: document.getElementById("chart-btn"),
-  chartAngles: document.getElementById("chart-angles"),
   grid: document.getElementById("grid"),
   undo: document.getElementById("undo-btn"),
   reset: document.getElementById("reset-btn"),
@@ -102,23 +115,33 @@ let teamNames = [];
 
 let state = emptyState();
 let chartOpen = false;
-let chartNotes = loadChartNotes();
+let chartStage = "setup";
+let chartYou = "";
+let chartBotTimer = 0;
+let freeSnapshot = null;
 
-function loadChartNotes() {
-  try {
-    const raw = localStorage.getItem(CHART_NOTES_KEY);
-    const parsed = raw ? JSON.parse(raw) : {};
-    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
-  } catch (error) {
-    return {};
-  }
-}
-
-function saveChartNotes() {
-  try {
-    localStorage.setItem(CHART_NOTES_KEY, JSON.stringify(chartNotes));
-  } catch (error) {}
-}
+const CHART_STEPS = [
+  { phase: "Ban 1", team: "blue", kind: "ban", index: 0, label: "Blue ban 1" },
+  { phase: "Ban 1", team: "red", kind: "ban", index: 0, label: "Red ban 1" },
+  { phase: "Ban 1", team: "blue", kind: "ban", index: 1, label: "Blue ban 2" },
+  { phase: "Ban 1", team: "red", kind: "ban", index: 1, label: "Red ban 2" },
+  { phase: "Ban 1", team: "blue", kind: "ban", index: 2, label: "Blue ban 3" },
+  { phase: "Ban 1", team: "red", kind: "ban", index: 2, label: "Red ban 3" },
+  { phase: "Pick 1", team: "blue", kind: "pick", index: 0, label: "Blue 1" },
+  { phase: "Pick 1", team: "red", kind: "pick", index: 0, label: "Red 1" },
+  { phase: "Pick 1", team: "red", kind: "pick", index: 1, label: "Red 2" },
+  { phase: "Pick 1", team: "blue", kind: "pick", index: 1, label: "Blue 2" },
+  { phase: "Pick 1", team: "blue", kind: "pick", index: 2, label: "Blue 3" },
+  { phase: "Pick 1", team: "red", kind: "pick", index: 2, label: "Red 3" },
+  { phase: "Ban 2", team: "red", kind: "ban", index: 3, label: "Red ban 4" },
+  { phase: "Ban 2", team: "blue", kind: "ban", index: 3, label: "Blue ban 4" },
+  { phase: "Ban 2", team: "red", kind: "ban", index: 4, label: "Red ban 5" },
+  { phase: "Ban 2", team: "blue", kind: "ban", index: 4, label: "Blue ban 5" },
+  { phase: "Pick 2", team: "red", kind: "pick", index: 3, label: "Red 4" },
+  { phase: "Pick 2", team: "blue", kind: "pick", index: 3, label: "Blue 4" },
+  { phase: "Pick 2", team: "blue", kind: "pick", index: 4, label: "Blue 5" },
+  { phase: "Pick 2", team: "red", kind: "pick", index: 4, label: "Red 5" },
+];
 
 function emptyTeam(name) {
   return {
@@ -1281,6 +1304,11 @@ function placeChampion(id, team, kind, index) {
     toast("That champion is locked in the Fearless pool");
     return;
   }
+  if (chartOpen && chartStage === "play") {
+    const step = CHART_STEPS[chartCurrentStep()];
+    if (!step || step.team !== team || step.kind !== kind || step.index !== index) return;
+    if (findSlot(id)) return;
+  }
 
   const dest = slotList(team, kind);
   const existing = findSlot(id);
@@ -1308,6 +1336,7 @@ function placeChampion(id, team, kind, index) {
 
   dest[index] = id;
   render();
+  queueChartBot();
 }
 
 function clearSlot(team, kind, index) {
@@ -1326,6 +1355,16 @@ function returnToPool(id) {
 }
 
 function undo() {
+  if (chartOpen && chartStage === "play") {
+    clearTimeout(chartBotTimer);
+    while (history.length) {
+      state = history.pop();
+      const step = CHART_STEPS[chartCurrentStep()];
+      if (!step || step.team === chartYou) break;
+    }
+    render();
+    return;
+  }
   if (!history.length) return;
   state = history.pop();
   render();
@@ -1352,7 +1391,9 @@ function resetGame() {
   state.red.name = keep.redName;
   state.blue.org = keep.blueOrg;
   state.red.org = keep.redOrg;
+  if (chartOpen && chartStage === "play") history = [];
   render();
+  queueChartBot();
 }
 
 function nextGame() {
@@ -1502,153 +1543,362 @@ function renderPicks(team, root) {
   }
 }
 
-function createChartSlot(team, kind, index) {
+function chartCurrentStep() {
+  for (let i = 0; i < CHART_STEPS.length; i += 1) {
+    const step = CHART_STEPS[i];
+    if (!slotList(step.team, step.kind)[step.index]) return i;
+  }
+  return CHART_STEPS.length;
+}
+
+function withRecContext(side, fn) {
+  const prevSide = recSide;
+  const prevRole = recRole;
+  const prevTag = tag;
+  recSide = side;
+  recRole = "All";
+  tag = "All";
+  try {
+    return fn();
+  } finally {
+    recSide = prevSide;
+    recRole = prevRole;
+    tag = prevTag;
+  }
+}
+
+function firstFreeChamp() {
+  const taken = takenIds();
+  for (let i = 0; i < champions.length; i += 1) {
+    if (!taken.has(champions[i].id)) return champions[i].id;
+  }
+  return null;
+}
+
+function chartRankedChoices(side) {
+  return withRecContext(side, function () {
+    const taken = takenIds();
+    const choices = [];
+    for (let i = 0; i < champions.length; i += 1) {
+      const champ = champions[i];
+      if (taken.has(champ.id)) continue;
+      const enemies = enemyIds();
+      const allies = allyIds();
+      const score = scoreChampion(champ.id, enemies, allies);
+      choices.push({
+        id: champ.id,
+        score: score ? score.avg : 0,
+        order: i,
+      });
+    }
+    choices.sort(function (a, b) {
+      return b.score - a.score || a.order - b.order;
+    });
+    return choices;
+  });
+}
+
+function chartBotChoice(step) {
+  const side = step.kind === "ban" ? chartYou : step.team;
+  const choices = chartRankedChoices(side);
+  if (choices.length) return choices[0].id;
+  return firstFreeChamp();
+}
+
+function chartTurnSteps() {
+  const current = chartCurrentStep();
+  const first = CHART_STEPS[current];
+  if (!first) return [];
+  const steps = [first];
+  if (first.kind === "pick") {
+    const next = CHART_STEPS[current + 1];
+    if (
+      next &&
+      next.phase === first.phase &&
+      next.team === first.team &&
+      next.kind === first.kind
+    ) {
+      steps.push(next);
+    }
+  }
+  return steps;
+}
+
+function chartSetSlot(step, id) {
+  slotList(step.team, step.kind)[step.index] = id;
+  if (step.kind === "pick") {
+    state[step.team].roles[step.index] = inferredSlotRole(id);
+  }
+}
+
+function chartBotPairChoice(steps) {
+  if (steps.length < 2) return [];
+  const first = steps[0];
+  const second = steps[1];
+  const firstDest = slotList(first.team, first.kind);
+  const secondDest = slotList(second.team, second.kind);
+  const oldFirst = firstDest[first.index];
+  const oldSecond = secondDest[second.index];
+  const oldFirstRole = state[first.team].roles[first.index];
+  const oldSecondRole = state[second.team].roles[second.index];
+  const firstChoices = chartRankedChoices(first.team);
+  let best = null;
+
+  for (let i = 0; i < firstChoices.length; i += 1) {
+    const firstChoice = firstChoices[i];
+    chartSetSlot(first, firstChoice.id);
+    const secondChoices = chartRankedChoices(second.team);
+    for (let j = 0; j < secondChoices.length; j += 1) {
+      const secondChoice = secondChoices[j];
+      const combined = firstChoice.score + secondChoice.score;
+      if (!best || combined > best.score) {
+        best = {
+          first: firstChoice.id,
+          second: secondChoice.id,
+          score: combined,
+        };
+      }
+    }
+    firstDest[first.index] = oldFirst;
+    state[first.team].roles[first.index] = oldFirstRole;
+  }
+  secondDest[second.index] = oldSecond;
+  state[second.team].roles[second.index] = oldSecondRole;
+  return best ? [best.first, best.second] : [];
+}
+
+function queueChartBot() {
+  clearTimeout(chartBotTimer);
+  if (!chartOpen || chartStage !== "play") return;
+  const step = CHART_STEPS[chartCurrentStep()];
+  if (!step || step.team === chartYou) return;
+  chartBotTimer = setTimeout(runChartBot, 520);
+}
+
+function runChartBot() {
+  if (!chartOpen || chartStage !== "play") return;
+  const steps = chartTurnSteps();
+  if (!steps.length || steps[0].team === chartYou) return;
+  const ids =
+    steps.length === 2
+      ? chartBotPairChoice(steps)
+      : [chartBotChoice(steps[0])];
+  if (ids.length !== steps.length || ids.some(function (id) { return !id; })) return;
+  snapshot();
+  for (let i = 0; i < steps.length; i += 1) {
+    chartSetSlot(steps[i], ids[i]);
+  }
+  render();
+  queueChartBot();
+}
+
+function lockChartChamp(id) {
+  if (!chartOpen || chartStage !== "play") return;
+  const step = CHART_STEPS[chartCurrentStep()];
+  if (!step) {
+    toast("Draft is complete");
+    return;
+  }
+  if (step.team !== chartYou) {
+    toast("Wait for the bot");
+    return;
+  }
+  placeChampion(id, step.team, step.kind, step.index);
+}
+
+function clearChartBoard() {
+  state.blue.bans = Array(5).fill(null);
+  state.blue.picks = Array(5).fill(null);
+  state.blue.roles = Array(5).fill(null);
+  state.red.bans = Array(5).fill(null);
+  state.red.picks = Array(5).fill(null);
+  state.red.roles = Array(5).fill(null);
+  state.usedPicks = [];
+  history = [];
+}
+
+function enterChart() {
+  if (chartOpen) return;
+  freeSnapshot = {
+    state: structuredClone(state),
+    history: history.slice(),
+    recSide: recSide,
+    recRole: recRole,
+    search: search,
+    tag: tag,
+  };
+  chartOpen = true;
+  chartStage = "setup";
+  chartYou = "";
+  clearTimeout(chartBotTimer);
+  render();
+}
+
+function exitChart() {
+  clearTimeout(chartBotTimer);
+  chartOpen = false;
+  chartStage = "setup";
+  chartYou = "";
+  if (freeSnapshot) {
+    state = freeSnapshot.state;
+    history = freeSnapshot.history;
+    recSide = freeSnapshot.recSide;
+    recRole = freeSnapshot.recRole;
+    search = freeSnapshot.search;
+    tag = freeSnapshot.tag;
+    if (els.search) els.search.value = search;
+    freeSnapshot = null;
+  }
+  render();
+}
+
+function startChartPlay(side) {
+  chartYou = side;
+  chartStage = "play";
+  recSide = side;
+  recRole = "All";
+  tag = "All";
+  search = "";
+  if (els.chartSearch) els.chartSearch.value = "";
+  clearChartBoard();
+  render();
+  queueChartBot();
+}
+
+function createChartSlot(team, kind, index, current) {
   const slot = document.createElement("div");
   const id = slotList(team, kind)[index];
   const label = (kind === "ban" ? "B" : "P") + (index + 1);
   slot.className = "chart-slot chart-" + kind + " chart-" + team;
+  if (current) slot.classList.add("is-current");
   if (id) {
     slot.classList.add("filled");
-    slot.draggable = true;
-    slot.title = champName(id) + " · " + label + " — drag to move, double-click to remove";
+    slot.title = champName(id);
     const img = document.createElement("img");
     img.src = portrait(id);
     img.alt = champName(id);
     img.draggable = false;
     slot.append(img);
-    slot.addEventListener("dragstart", function (event) {
-      beginDrag(event, { id: id, team: team, kind: kind, index: index });
-    });
-    slot.addEventListener("dragend", endDrag);
   } else {
-    slot.title = "Drop a " + kind + " — " + (team === "blue" ? "Blue" : "Red") + " " + label;
+    slot.title = label;
     const empty = document.createElement("span");
     empty.textContent = label;
     slot.append(empty);
+    if (current && team === chartYou) bindSlotDrop(slot, team, kind, index);
   }
-  bindSlotDrop(slot, team, kind, index);
   return slot;
 }
 
-function chartNoteInput(key, placeholder) {
-  const input = document.createElement("input");
-  input.type = "text";
-  input.className = "chart-note";
-  input.setAttribute("data-note", key);
-  input.placeholder = placeholder || "Angle";
-  input.maxLength = 120;
-  input.value = chartNotes[key] || "";
-  input.addEventListener("input", function () {
-    chartNotes[key] = input.value;
-    saveChartNotes();
-  });
-  return input;
-}
-
-function chartBanSide(team, start, count) {
-  const wrap = document.createElement("div");
-  wrap.className = "chart-ban-side chart-" + team;
-  const label = document.createElement("span");
-  label.textContent = team === "blue" ? "Blue" : "Red";
-  wrap.append(label);
-  for (let i = 0; i < count; i += 1) {
-    wrap.append(createChartSlot(team, "ban", start + i));
+function renderChartTimeline() {
+  if (!els.chartTimeline) return;
+  els.chartTimeline.innerHTML = "";
+  const current = chartCurrentStep();
+  let lastPhase = "";
+  for (let i = 0; i < CHART_STEPS.length; i += 1) {
+    const step = CHART_STEPS[i];
+    if (step.phase !== lastPhase) {
+      lastPhase = step.phase;
+      const heading = document.createElement("h3");
+      heading.textContent = step.phase;
+      els.chartTimeline.append(heading);
+    }
+    const row = document.createElement("div");
+    row.className = "chart-step chart-" + step.team;
+    if (i === current) row.classList.add("is-current");
+    if (i < current) row.classList.add("is-done");
+    const who = document.createElement("span");
+    who.className = "chart-step-who";
+    who.textContent = (step.team === chartYou ? "You · " : "Bot · ") + step.label;
+    row.append(who, createChartSlot(step.team, step.kind, step.index, i === current));
+    els.chartTimeline.append(row);
   }
-  return wrap;
+  const cur = els.chartTimeline.querySelector(".chart-step.is-current");
+  if (cur && cur.scrollIntoView) cur.scrollIntoView({ block: "nearest" });
 }
 
-function chartPickRow(team, label, slots, noteKey) {
-  const row = document.createElement("div");
-  row.className = "chart-row chart-" + team;
-  const name = document.createElement("span");
-  name.className = "chart-row-label";
-  name.textContent = label;
-  const cells = document.createElement("div");
-  cells.className = "chart-row-slots";
-  for (let i = 0; i < slots.length; i += 1) {
-    cells.append(createChartSlot(team, "pick", slots[i]));
+function renderChartRecs() {
+  if (!els.chartRecs) return;
+  els.chartRecs.innerHTML = "";
+  const recs = withRecContext(chartYou || recSide, recommendedPicks).slice(0, 6);
+  if (!recs.length) return;
+  for (let i = 0; i < recs.length; i += 1) {
+    const rec = recs[i];
+    const card = document.createElement("button");
+    card.type = "button";
+    card.className = "chart-rec";
+    card.title = scoreTooltip(rec.champ, rec);
+    const img = document.createElement("img");
+    img.src = portrait(rec.champ.id);
+    img.alt = rec.champ.name;
+    const name = document.createElement("strong");
+    name.textContent = rec.champ.name;
+    const delta = document.createElement("span");
+    delta.className = rec.avg >= 0 ? "up" : "down";
+    delta.textContent = formatDelta(rec.avg);
+    card.append(img, name, delta);
+    card.addEventListener("click", function () {
+      lockChartChamp(rec.champ.id);
+    });
+    els.chartRecs.append(card);
   }
-  row.append(name, cells, chartNoteInput(noteKey, "Angle"));
-  return row;
 }
 
-function chartPhase(title) {
-  const phase = document.createElement("section");
-  phase.className = "chart-phase";
-  const heading = document.createElement("h3");
-  heading.textContent = title;
-  phase.append(heading);
-  return phase;
+function renderChartTurn() {
+  if (!els.chartTurn) return;
+  const steps = chartTurnSteps();
+  const step = steps[0];
+  els.chartTurn.classList.remove("is-you", "is-bot");
+  if (!step) {
+    els.chartTurn.textContent = "Draft complete";
+    return;
+  }
+  const label =
+    steps.length > 1 ? steps[0].label + " + " + steps[1].label : step.label;
+  const yours = step.team === chartYou;
+  els.chartTurn.classList.add(yours ? "is-you" : "is-bot");
+  if (yours) {
+    els.chartTurn.textContent = "Your turn · " + label;
+  } else if (step.kind === "ban") {
+    els.chartTurn.textContent = "Bot is banning your best remaining picks · " + label;
+  } else {
+    els.chartTurn.textContent = "Bot is picking the highest-scoring pair · " + label;
+  }
 }
 
 function renderChart() {
-  if (!els.chart || !els.chartBody) return;
-  if (els.pool) els.pool.classList.toggle("chart-open", chartOpen);
-  els.chart.hidden = !chartOpen;
+  if (els.app) els.app.classList.toggle("chart-mode", chartOpen);
+  if (els.board) els.board.hidden = chartOpen;
+  if (els.chartScreen) els.chartScreen.hidden = !chartOpen;
+  if (els.chartSetup) els.chartSetup.hidden = !chartOpen || chartStage !== "setup";
+  if (els.chartPlay) els.chartPlay.hidden = !chartOpen || chartStage !== "play";
   if (els.chartBtn) {
     els.chartBtn.classList.toggle("active", chartOpen);
     els.chartBtn.setAttribute("aria-pressed", chartOpen ? "true" : "false");
+    els.chartBtn.textContent = chartOpen ? "Exit chart" : "Chart draft";
   }
-  if (els.chartAngles && document.activeElement !== els.chartAngles) {
-    els.chartAngles.value = chartNotes.overall || "";
+  if (els.phaseKicker) {
+    els.phaseKicker.textContent = chartOpen ? "Chart draft" : "Free draft";
   }
-  if (!chartOpen) return;
-
-  const active = document.activeElement;
-  const focusKey =
-    active && active.getAttribute && active.classList.contains("chart-note")
-      ? active.getAttribute("data-note")
-      : null;
-  const focusVal = focusKey ? active.value : null;
-  const selStart = focusKey ? active.selectionStart : null;
-  const selEnd = focusKey ? active.selectionEnd : null;
-
-  els.chartBody.innerHTML = "";
-
-  const ban1 = chartPhase("Ban 1");
-  const ban1Row = document.createElement("div");
-  ban1Row.className = "chart-bans";
-  ban1Row.append(chartBanSide("blue", 0, 3), chartBanSide("red", 0, 3));
-  ban1.append(ban1Row);
-
-  const pick1 = chartPhase("Pick 1");
-  pick1.append(
-    chartPickRow("blue", "Blue 1", [0], "b1"),
-    chartPickRow("red", "Red 1–2", [0, 1], "r12"),
-    chartPickRow("blue", "Blue 2–3", [1, 2], "b23"),
-    chartPickRow("red", "Red 3", [2], "r3")
-  );
-
-  const ban2 = chartPhase("Ban 2");
-  const ban2Row = document.createElement("div");
-  ban2Row.className = "chart-bans";
-  ban2Row.append(chartBanSide("red", 3, 2), chartBanSide("blue", 3, 2));
-  ban2.append(ban2Row);
-
-  const pick2 = chartPhase("Pick 2");
-  pick2.append(
-    chartPickRow("red", "Red 4", [3], "r4"),
-    chartPickRow("blue", "Blue 4–5", [3, 4], "b45"),
-    chartPickRow("red", "Red 5", [4], "r5")
-  );
-
-  els.chartBody.append(ban1, pick1, ban2, pick2);
-
-  if (focusKey) {
-    const input = els.chartBody.querySelector('.chart-note[data-note="' + focusKey + '"]');
-    if (input) {
-      if (focusVal != null) input.value = focusVal;
-      input.focus();
-      if (selStart != null && selEnd != null) {
-        try {
-          input.setSelectionRange(selStart, selEnd);
-        } catch (error) {}
-      }
+  if (els.phaseTitle) {
+    if (!chartOpen) els.phaseTitle.textContent = "Drop a champion on any slot";
+    else if (chartStage === "setup") els.phaseTitle.textContent = "First pick or second pick";
+    else {
+      const step = CHART_STEPS[chartCurrentStep()];
+      els.phaseTitle.textContent = step ? step.label : "Draft complete";
     }
   }
+  if (els.chartFirstTeam) els.chartFirstTeam.textContent = state.blue.name || "Blue Side";
+  if (els.chartSecondTeam) els.chartSecondTeam.textContent = state.red.name || "Red Side";
+  if (!chartOpen || chartStage !== "play") return;
+  renderChartTurn();
+  renderChartTimeline();
+  renderChartRecs();
 }
 
 function renderGrid() {
+  const root =
+    chartOpen && chartStage === "play" && els.chartGrid ? els.chartGrid : els.grid;
+  if (!root) return;
   const taken = takenIds();
   const visible = visibleChampions();
   const recs = recommendedPicks();
@@ -1656,7 +1906,7 @@ function renderGrid() {
   for (let i = 0; i < recs.length && i < 8; i += 1) topIds[recs[i].champ.id] = recs[i];
   const enemies = enemyIds();
   const allies = allyIds();
-  els.grid.innerHTML = "";
+  root.innerHTML = "";
   if (!visible.length) {
     const empty = document.createElement("p");
     empty.className = "pick-empty";
@@ -1664,7 +1914,7 @@ function renderGrid() {
       recRole !== "All"
         ? "No " + recRole + " champions match that search."
         : "No champions match that search.";
-    els.grid.append(empty);
+    root.append(empty);
     return;
   }
   for (const champ of visible) {
@@ -1700,12 +1950,16 @@ function renderGrid() {
         beginDrag(event, { id: champ.id, source: "pool" });
       });
       button.addEventListener("dragend", endDrag);
+      button.addEventListener("click", function () {
+        lockChartChamp(champ.id);
+      });
     }
-    els.grid.append(button);
+    root.append(button);
   }
 }
 
 function renderRecs() {
+  if (chartOpen) return;
   const recs = recommendedPicks();
   const enemies = enemyIds();
   const allies = allyIds();
@@ -2049,14 +2303,26 @@ function bind() {
   els.swap.addEventListener("click", swapSides);
   if (els.chartBtn) {
     els.chartBtn.addEventListener("click", function () {
-      chartOpen = !chartOpen;
-      renderChart();
+      if (chartOpen) exitChart();
+      else enterChart();
     });
   }
-  if (els.chartAngles) {
-    els.chartAngles.addEventListener("input", function () {
-      chartNotes.overall = els.chartAngles.value;
-      saveChartNotes();
+  if (els.chartFirst) {
+    els.chartFirst.addEventListener("click", function () {
+      startChartPlay("blue");
+    });
+  }
+  if (els.chartSecond) {
+    els.chartSecond.addEventListener("click", function () {
+      startChartPlay("red");
+    });
+  }
+  if (els.chartUndo) els.chartUndo.addEventListener("click", undo);
+  if (els.chartReset) els.chartReset.addEventListener("click", resetGame);
+  if (els.chartSearch) {
+    els.chartSearch.addEventListener("input", function () {
+      search = els.chartSearch.value;
+      renderGrid();
     });
   }
   els.recsBlue.addEventListener("click", function () {
@@ -2086,11 +2352,19 @@ function bind() {
   });
 
   document.addEventListener("keydown", function (event) {
-    if (event.key === "/" && document.activeElement !== els.search) {
+    const searchEl =
+      chartOpen && chartStage === "play" && els.chartSearch ? els.chartSearch : els.search;
+    if (event.key === "/" && document.activeElement !== searchEl) {
       event.preventDefault();
-      els.search.focus();
+      searchEl.focus();
     }
     if (event.key === "Escape") {
+      if (chartOpen && chartStage === "play") {
+        if (els.chartSearch) els.chartSearch.value = "";
+        search = "";
+        renderGrid();
+        return;
+      }
       els.search.value = "";
       search = "";
       renderGrid();

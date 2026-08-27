@@ -15,7 +15,7 @@
       href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&family=Sora:wght@600;700&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="styles.css?v=53" />
+    <link rel="stylesheet" href="styles.css?v=54" />
     <script>
       window.addEventListener("error", function (event) {
         var status = document.getElementById("boot-status");
@@ -55,8 +55,8 @@
         </div>
 
         <div class="phase-wrap">
-          <p class="phase-kicker">Free draft</p>
-          <h2 class="phase-title done">Drop a champion on any slot</h2>
+          <p id="phase-kicker" class="phase-kicker">Free draft</p>
+          <h2 id="phase-title" class="phase-title done">Drop a champion on any slot</h2>
         </div>
 
         <div class="top-actions">
@@ -77,7 +77,7 @@
         </div>
       </header>
 
-      <main class="board">
+      <main class="board" id="draft-board">
         <section class="team team-blue" aria-label="Blue side">
           <header class="team-head">
             <div class="team-select">
@@ -153,20 +153,6 @@
             <div id="recs-list" class="recs-list"></div>
           </div>
           <div class="pool-main">
-            <div id="draft-chart" class="draft-chart" hidden>
-              <div class="draft-chart-head">
-                <p class="draft-chart-kicker">Draft chart</p>
-                <p class="muted">Competitive pick/ban order. Drop champions here or on the side boards.</p>
-              </div>
-              <textarea
-                id="chart-angles"
-                class="chart-angles"
-                rows="2"
-                maxlength="400"
-                placeholder="Overall angles — win conditions, flex, blind, etc."
-              ></textarea>
-              <div id="draft-chart-body" class="draft-chart-body"></div>
-            </div>
             <div id="grid" class="grid"></div>
           </div>
           <div class="pool-footer">
@@ -204,6 +190,53 @@
         </section>
       </main>
 
+      <main id="chart-screen" class="chart-screen" hidden>
+        <section id="chart-setup" class="chart-setup">
+          <p class="chart-setup-kicker">Chart draft</p>
+          <h2>Draft against a bot</h2>
+          <p class="muted">
+            Competitive pick/ban order. The bot target-bans your best remaining champions
+            and drafts its own side.
+          </p>
+          <p class="muted chart-setup-hint">
+            Set your team on Blue for first pick, or on Red for second pick, before you start.
+          </p>
+          <div class="chart-side-picks">
+            <button type="button" id="chart-first" class="chart-side-btn">
+              <span class="chart-side-label">First pick</span>
+              <strong id="chart-first-team" class="chart-side-team">Blue Side</strong>
+              <span class="muted">Blue · you ban and pick first</span>
+            </button>
+            <button type="button" id="chart-second" class="chart-side-btn">
+              <span class="chart-side-label">Second pick</span>
+              <strong id="chart-second-team" class="chart-side-team">Red Side</strong>
+              <span class="muted">Red · you pick second</span>
+            </button>
+          </div>
+        </section>
+        <section id="chart-play" class="chart-play" hidden>
+          <p id="chart-turn" class="chart-turn"></p>
+          <div class="chart-play-layout">
+            <div id="chart-timeline" class="chart-timeline"></div>
+            <div class="chart-play-pool">
+              <input
+                id="chart-search"
+                type="search"
+                placeholder="Search champions"
+                autocomplete="off"
+                spellcheck="false"
+              />
+              <div id="chart-recs" class="chart-recs"></div>
+              <div id="chart-grid" class="grid"></div>
+              <div class="chart-play-foot">
+                <button type="button" id="chart-undo">Undo</button>
+                <button type="button" id="chart-reset">Reset draft</button>
+              </div>
+            </div>
+          </div>
+        </section>
+      </main>
+
       <footer class="draft-foot">
         <div class="expect-bar" id="expect-bar">
           <div class="expect-side expect-blue">
@@ -236,6 +269,6 @@
     <script src="pro-games.js?v=4"></script>
     <script src="player-ratings.js?v=16"></script>
     <script src="predict.js?v=4"></script>
-    <script src="app.js?v=7" onerror="document.getElementById('boot-status').textContent='Could not load app.js'"></script>
+    <script src="app.js?v=8" onerror="document.getElementById('boot-status').textContent='Could not load app.js'"></script>
   </body>
 </html>
