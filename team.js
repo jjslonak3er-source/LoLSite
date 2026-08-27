@@ -10,8 +10,12 @@ const teamEls = {
   leagues: document.getElementById("team-leagues"),
   windows: document.getElementById("team-windows"),
   patches: document.getElementById("team-patches"),
+  views: document.getElementById("team-views"),
   summary: document.getElementById("team-summary"),
   boardTitle: document.getElementById("team-board-title"),
+  rosterView: document.getElementById("team-roster-view"),
+  identityView: document.getElementById("team-identity-view"),
+  identityBody: document.getElementById("team-identity-body"),
   head: document.getElementById("team-head"),
   body: document.getElementById("team-body"),
   side: document.getElementById("team-side"),
@@ -21,6 +25,7 @@ const teamEls = {
 };
 
 let team = params.get("team") || "";
+let teamView = params.get("view") === "identity" ? "identity" : "roster";
 let rosterSort = "role";
 let rosterDir = 1;
 
@@ -35,6 +40,8 @@ function teamSyncUrl() {
   url.searchParams.set("league", formatSel(leagues));
   url.searchParams.set("window", windowParam());
   url.searchParams.set("patch", formatSel(patches));
+  if (team && teamView === "identity") url.searchParams.set("view", "identity");
+  else url.searchParams.delete("view");
   history.replaceState({}, "", url);
 }
 
@@ -63,6 +70,16 @@ function teamChips() {
     teamSyncUrl();
     renderTeam();
   });
+  if (teamEls.views) {
+    teamEls.views.hidden = !team;
+    if (team) {
+      chipRow(teamEls.views, ["Roster", "Team identity"], teamView === "identity" ? "Team identity" : "Roster", function (name) {
+        teamView = name === "Team identity" ? "identity" : "roster";
+        teamSyncUrl();
+        renderTeam();
+      });
+    }
+  }
 }
 
 function sideOf(game, name) {
@@ -86,6 +103,180 @@ function tallyFirst(rec, x, key, side) {
 
 function firstRate(hits, n) {
   return n ? hits / n : null;
+}
+
+function showTeamView(which) {
+  const identity = which === "identity";
+  if (teamEls.rosterView) teamEls.rosterView.hidden = identity;
+  if (teamEls.identityView) teamEls.identityView.hidden = !identity;
+}
+
+function blankBucket() {
+  return { n: 0, w: 0, gd: 0, gdN: 0 };
+}
+
+function addBucket(bucket, win, gd) {
+  bucket.n += 1;
+  if (win) bucket.w += 1;
+  if (gd != null && isFinite(gd)) {
+    bucket.gd += gd;
+    bucket.gdN += 1;
+  }
+}
+
+function teamGd15(game, side) {
+  const g15 = game.x && game.x.g15;
+  if (!g15) return null;
+  let sum = 0;
+  let n = 0;
+  for (let i = 0; i < 5; i += 1) {
+    if (g15[i] == null || !isFinite(g15[i])) continue;
+    sum += g15[i];
+    n += 1;
+  }
+  if (!n) return null;
+  const avg = sum / n;
+  return side === "b" ? avg : -avg;
+}
+
+function hadFirstPick(game, side) {
+  const fp = game.x && game.x.fp;
+  if (fp !== 0 && fp !== 1) return null;
+  return (side === "b") === (fp === 1);
+}
+
+function teamIdentity(teamName, games) {
+  const sides = { b: blankBucket(), r: blankBucket() };
+  const picks = { first: blankBucket(), second: blankBucket() };
+  const roles = [{}, {}, {}, {}, {}];
+  const roleWins = [{}, {}, {}, {}, {}];
+  const order = [{}, {}, {}, {}, {}];
+  const orderWins = [{}, {}, {}, {}, {}];
+  const orderRoles = [{}, {}, {}, {}, {}];
+  const bans = {};
+  let orderN = 0;
+  for (let i = 0; i < (games || []).length; i += 1) {
+    const game = games[i];
+    const side = sideOf(game, teamName);
+    if (!side) continue;
+    const win = side === "b" ? game.w === 1 : game.w === 0;
+    const gd = teamGd15(game, side);
+    addBucket(sides[side], win, gd);
+    const first = hadFirstPick(game, side);
+    if (first != null) addBucket(first ? picks.first : picks.second, win, gd);
+    const champs = side === "b" ? game.b : game.r;
+    for (let r = 0; r < 5; r += 1) {
+      const id = champs && champs[r];
+      if (!id) continue;
+      roles[r][id] = (roles[r][id] || 0) + 1;
+      if (win) roleWins[r][id] = (roleWins[r][id] || 0) + 1;
+    }
+    const draft = side === "b" ? game.bpk : game.rpk;
+    if (draft && draft.length) {
+      let used = false;
+      for (let s = 0; s < 5; s += 1) {
+        const id = draft[s];
+        if (!id) continue;
+        used = true;
+        order[s][id] = (order[s][id] || 0) + 1;
+        if (win) orderWins[s][id] = (orderWins[s][id] || 0) + 1;
+        const ri = champs ? champs.indexOf(id) : -1;
+        if (ri >= 0) {
+          const role = ROLE_KEYS[ri];
+          orderRoles[s][role] = (orderRoles[s][role] || 0) + 1;
+        }
+      }
+      if (used) orderN += 1;
+    }
+    const mine = sideBans(game, side);
+    for (let b = 0; b < mine.length; b += 1) {
+      if (!mine[b]) continue;
+      bans[mine[b]] = (bans[mine[b]] || 0) + 1;
+    }
+  }
+  return {
+    sides: sides,
+    picks: picks,
+    roles: roles,
+    roleWins: roleWins,
+    order: order,
+    orderWins: orderWins,
+    orderRoles: orderRoles,
+    orderN: orderN,
+    bans: bans,
+  };
+}
+
+function identityTiles(rec) {
+  const wrap = document.createElement("div");
+  wrap.className = "team-identity-tiles";
+  const wr = rec.n ? rec.w / rec.n : null;
+  const gd = rec.gdN ? rec.gd / rec.gdN : null;
+  wrap.append(tile("Games", String(rec.n)));
+  wrap.append(tile("WR", fmtPct(wr), wr >= 0.5 ? "up" : wr != null ? "down" : ""));
+  wrap.append(tile("GD@15", gd == null ? "—" : fmtDiff(gd), gd > 0 ? "up" : gd < 0 ? "down" : ""));
+  return wrap;
+}
+
+function identityBlock(label, rec) {
+  const wrap = document.createElement("div");
+  wrap.className = "team-identity-block";
+  const h = document.createElement("h5");
+  h.textContent = label;
+  wrap.append(h, identityTiles(rec));
+  return wrap;
+}
+
+function identityTable(title, headers, rows) {
+  const sig = document.createElement("div");
+  sig.className = "team-identity-block";
+  const sigHead = document.createElement("h5");
+  sigHead.textContent = title;
+  const wrap = document.createElement("div");
+  wrap.className = "pro-table-wrap";
+  const table = document.createElement("table");
+  table.className = "pro-table";
+  const thead = document.createElement("thead");
+  const headRow = document.createElement("tr");
+  for (let i = 0; i < headers.length; i += 1) {
+    const th = document.createElement("th");
+    th.textContent = headers[i].label;
+    if (headers[i].num) th.className = "sort-num";
+    headRow.append(th);
+  }
+  thead.append(headRow);
+  const tbody = document.createElement("tbody");
+  for (let i = 0; i < rows.length; i += 1) tbody.append(rows[i]);
+  table.append(thead, tbody);
+  wrap.append(table);
+  sig.append(sigHead, wrap);
+  return sig;
+}
+
+function identityChampRow(label, counts, wins, extra) {
+  const ids = topKeys(counts, 5);
+  const top = ids[0];
+  const games = top ? counts[top] : 0;
+  const winsN = top ? wins[top] || 0 : 0;
+  const wr = games ? winsN / games : null;
+  const tr = document.createElement("tr");
+  const labelCell = document.createElement("td");
+  labelCell.className = "pro-role";
+  labelCell.textContent = label;
+  const pool = document.createElement("td");
+  pool.append(simpleStrip(ids));
+  const topCell = document.createElement("td");
+  topCell.textContent = top ? champName(top) : "—";
+  tr.append(labelCell, pool, topCell);
+  if (extra) tr.append(extra);
+  const gamesCell = document.createElement("td");
+  gamesCell.className = "num";
+  gamesCell.textContent = top ? String(games) : "—";
+  const wrCell = document.createElement("td");
+  wrCell.className = "num " + (wr >= 0.5 ? "wr-up" : wr != null ? "wr-down" : "");
+  wrCell.textContent = fmtPct(wr);
+  tr.append(gamesCell, wrCell);
+  return tr;
 }
 
 function collectTeams() {
@@ -472,6 +663,7 @@ function openPlayer(name) {
 }
 
 function renderTeamDirectory() {
+  showTeamView("roster");
   teamEls.layout.classList.add("is-directory");
   teamEls.layout.classList.remove("is-team");
   teamEls.summary.hidden = true;
@@ -613,6 +805,53 @@ function renderTeamDetail() {
   teamEls.summary.append(tile("First tower", fmtPct(ft), ft >= 0.5 ? "up" : ft != null ? "down" : ""));
   teamEls.summary.append(tile("First dragon", fmtPct(fd), fd >= 0.5 ? "up" : fd != null ? "down" : ""));
 
+  if (teamView === "identity") renderTeamIdentity(rec);
+  else renderTeamRoster(rec, roster);
+
+  const shown = rec.games || [];
+  teamEls.side.hidden = false;
+  teamEls.gamesSub.textContent = shown.length + " games";
+  teamEls.gamesBody.innerHTML = "";
+  for (let i = 0; i < shown.length; i += 1) {
+    const game = shown[i];
+    const mine = sideOf(game, rec.name);
+    const win = mine === "b" ? game.w === 1 : game.w === 0;
+    const vs = mine === "b" ? game.rt : game.bt;
+    const picks = mine === "b" ? game.b : game.r;
+    const tr = document.createElement("tr");
+    tr.addEventListener("click", function () {
+      location.href =
+        "match.html?g=" +
+        encodeURIComponent(game.g) +
+        "&from=" +
+        encodeURIComponent(
+          "team.html?team=" +
+            encodeURIComponent(rec.name) +
+            "&league=" +
+            encodeURIComponent(formatSel(leagues)) +
+            "&window=" +
+            encodeURIComponent(windowParam()) +
+            "&patch=" +
+            encodeURIComponent(formatSel(patches)) +
+            (teamView === "identity" ? "&view=identity" : "")
+        );
+    });
+    const date = document.createElement("td");
+    date.textContent = (game.d || "").slice(5);
+    const vsCell = document.createElement("td");
+    vsCell.textContent = vs || "—";
+    const pickCell = document.createElement("td");
+    pickCell.append(simpleStrip(picks || []));
+    const result = document.createElement("td");
+    result.className = "num " + (win ? "wr-up" : "wr-down");
+    result.textContent = win ? "W" : "L";
+    tr.append(date, vsCell, pickCell, result);
+    teamEls.gamesBody.append(tr);
+  }
+}
+
+function renderTeamRoster(rec, roster) {
+  showTeamView("roster");
   teamEls.boardTitle.textContent = "Roster";
   setHead(
     teamEls.head,
@@ -641,85 +880,119 @@ function renderTeamDetail() {
   teamEls.body.innerHTML = "";
   if (!roster.length) {
     emptyRow(teamEls.body, 9, "No players in this window.");
-  } else {
-    for (let i = 0; i < roster.length; i += 1) {
-      const row = roster[i];
-      const tr = document.createElement("tr");
-      tr.addEventListener("click", function () {
-        openPlayer(row.name);
-      });
-      const name = document.createElement("td");
-      name.textContent = row.name;
-      const roleCell = document.createElement("td");
-      roleCell.className = "pro-role";
-      roleCell.textContent = (row.role || "").toUpperCase();
-      const scoreCell = document.createElement("td");
-      scoreCell.className = "num " + scoreTone(row.score);
-      scoreCell.textContent = fmtScore(row.score);
-      scoreCell.title = "Current player score";
-      const relCell = document.createElement("td");
-      relCell.className = "num " + scoreTone(row.rel);
-      relCell.textContent = fmtScore(row.rel);
-      relCell.title = "Games-weighted average of champion-relative scores";
-      const vsCell = document.createElement("td");
-      vsCell.className = "num " + scoreTone(row.vs);
-      vsCell.textContent = fmtScore(row.vs);
-      vsCell.title = "Average of Score and Mastery vs team average — above teammates inflates, below deflates";
-      const games = document.createElement("td");
-      games.className = "num";
-      games.textContent = String(row.games);
-      const wrCell = document.createElement("td");
-      wrCell.className = "num " + (row.winRate >= 0.5 ? "wr-up" : "wr-down");
-      wrCell.textContent = fmtPct(row.winRate);
-      const kda = document.createElement("td");
-      kda.className = "num";
-      kda.textContent = fmtRate(row.kda);
-      const pool = document.createElement("td");
-      pool.append(simpleStrip(row.champs));
-      tr.append(name, roleCell, vsCell, scoreCell, relCell, games, wrCell, kda, pool);
-      teamEls.body.append(tr);
-    }
+    return;
   }
-
-  const shown = rec.games || [];
-  teamEls.side.hidden = false;
-  teamEls.gamesSub.textContent = shown.length + " games";
-  teamEls.gamesBody.innerHTML = "";
-  for (let i = 0; i < shown.length; i += 1) {
-    const game = shown[i];
-    const mine = sideOf(game, rec.name);
-    const win = mine === "b" ? game.w === 1 : game.w === 0;
-    const vs = mine === "b" ? game.rt : game.bt;
-    const picks = mine === "b" ? game.b : game.r;
+  for (let i = 0; i < roster.length; i += 1) {
+    const row = roster[i];
     const tr = document.createElement("tr");
     tr.addEventListener("click", function () {
-      location.href =
-        "match.html?g=" +
-        encodeURIComponent(game.g) +
-        "&from=" +
-        encodeURIComponent(
-          "team.html?team=" +
-            encodeURIComponent(rec.name) +
-            "&league=" +
-            encodeURIComponent(formatSel(leagues)) +
-            "&window=" +
-            encodeURIComponent(windowParam()) +
-            "&patch=" +
-            encodeURIComponent(formatSel(patches))
-        );
+      openPlayer(row.name);
     });
-    const date = document.createElement("td");
-    date.textContent = (game.d || "").slice(5);
+    const name = document.createElement("td");
+    name.textContent = row.name;
+    const roleCell = document.createElement("td");
+    roleCell.className = "pro-role";
+    roleCell.textContent = (row.role || "").toUpperCase();
+    const scoreCell = document.createElement("td");
+    scoreCell.className = "num " + scoreTone(row.score);
+    scoreCell.textContent = fmtScore(row.score);
+    scoreCell.title = "Current player score";
+    const relCell = document.createElement("td");
+    relCell.className = "num " + scoreTone(row.rel);
+    relCell.textContent = fmtScore(row.rel);
+    relCell.title = "Games-weighted average of champion-relative scores";
     const vsCell = document.createElement("td");
-    vsCell.textContent = vs || "—";
-    const pickCell = document.createElement("td");
-    pickCell.append(simpleStrip(picks || []));
-    const result = document.createElement("td");
-    result.className = "num " + (win ? "wr-up" : "wr-down");
-    result.textContent = win ? "W" : "L";
-    tr.append(date, vsCell, pickCell, result);
-    teamEls.gamesBody.append(tr);
+    vsCell.className = "num " + scoreTone(row.vs);
+    vsCell.textContent = fmtScore(row.vs);
+    vsCell.title = "Average of Score and Mastery vs team average — above teammates inflates, below deflates";
+    const games = document.createElement("td");
+    games.className = "num";
+    games.textContent = String(row.games);
+    const wrCell = document.createElement("td");
+    wrCell.className = "num " + (row.winRate >= 0.5 ? "wr-up" : "wr-down");
+    wrCell.textContent = fmtPct(row.winRate);
+    const kda = document.createElement("td");
+    kda.className = "num";
+    kda.textContent = fmtRate(row.kda);
+    const pool = document.createElement("td");
+    pool.append(simpleStrip(row.champs));
+    tr.append(name, roleCell, vsCell, scoreCell, relCell, games, wrCell, kda, pool);
+    teamEls.body.append(tr);
   }
+}
+
+function renderTeamIdentity(rec) {
+  showTeamView("identity");
+  const stats = teamIdentity(rec.name, rec.games);
+  const body = teamEls.identityBody;
+  body.innerHTML = "";
+  if (!rec.games.length) {
+    const empty = document.createElement("p");
+    empty.className = "muted";
+    empty.textContent = "No games in this window.";
+    body.append(empty);
+    return;
+  }
+
+  const grid = document.createElement("div");
+  grid.className = "team-identity-grid";
+  const sideCol = document.createElement("div");
+  sideCol.className = "team-identity-pair";
+  sideCol.append(identityBlock("Blue side", stats.sides.b), identityBlock("Red side", stats.sides.r));
+  const pickCol = document.createElement("div");
+  pickCol.className = "team-identity-pair";
+  pickCol.append(identityBlock("First pick", stats.picks.first), identityBlock("Second pick", stats.picks.second));
+  grid.append(sideCol, pickCol);
+  body.append(grid);
+
+  if (stats.orderN) {
+    const orderRows = [];
+    for (let s = 0; s < 5; s += 1) {
+      const roleCell = document.createElement("td");
+      roleCell.className = "pro-role";
+      roleCell.textContent = (mostCommon(stats.orderRoles[s]) || "—").toUpperCase();
+      orderRows.push(identityChampRow("Pick " + (s + 1), stats.order[s], stats.orderWins[s], roleCell));
+    }
+    body.append(
+      identityTable(
+        "Pick order",
+        [
+          { label: "Pick" },
+          { label: "Pool" },
+          { label: "Top pick" },
+          { label: "Role" },
+          { label: "Games", num: true },
+          { label: "WR", num: true },
+        ],
+        orderRows
+      )
+    );
+  }
+
+  const sigRows = [];
+  for (let r = 0; r < ROLE_KEYS.length; r += 1) {
+    sigRows.push(identityChampRow(ROLE_KEYS[r].toUpperCase(), stats.roles[r], stats.roleWins[r]));
+  }
+  body.append(
+    identityTable(
+      "Signature picks",
+      [
+        { label: "Role" },
+        { label: "Pool" },
+        { label: "Top pick" },
+        { label: "Games", num: true },
+        { label: "WR", num: true },
+      ],
+      sigRows
+    )
+  );
+
+  const banBlock = document.createElement("div");
+  banBlock.className = "team-identity-block";
+  const banHead = document.createElement("h5");
+  banHead.textContent = "Ban identity";
+  banBlock.append(banHead, simpleStrip(topKeys(stats.bans, 8)));
+  body.append(banBlock);
 }
 
 function renderTeam() {

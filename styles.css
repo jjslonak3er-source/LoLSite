@@ -1994,6 +1994,93 @@ select:hover,
   padding: 12px;
 }
 
+.team-filter-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px 12px;
+}
+
+.player-layout.is-directory .team-filter-row {
+  grid-template-columns: auto minmax(0, 1fr);
+}
+
+.player-layout.is-team #team-views {
+  padding-left: 10px;
+  border-left: 1px solid var(--line);
+}
+
+.player-layout .pro-main:has(.team-view) {
+  grid-template-rows: minmax(0, 1fr);
+  min-height: 0;
+}
+
+.team-view {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 10px;
+  min-height: 0;
+}
+
+.team-identity {
+  display: grid;
+  gap: 16px;
+  align-content: start;
+  overflow: auto;
+  min-height: 0;
+  padding-right: 2px;
+}
+
+.team-identity-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+}
+
+.team-identity-block {
+  display: grid;
+  gap: 8px;
+}
+
+.team-identity-block h5 {
+  margin: 0;
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.team-identity-pair {
+  display: grid;
+  gap: 8px;
+}
+
+.team-identity-tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(96px, 1fr));
+  gap: 6px;
+}
+
+.team-identity-tiles .match-stat-tile {
+  padding: 6px 8px;
+}
+
+@media (max-width: 900px) {
+  .team-filter-row,
+  .player-layout.is-directory .team-filter-row {
+    grid-template-columns: 1fr;
+  }
+
+  .player-layout.is-team #team-views {
+    padding-left: 0;
+    border-left: 0;
+  }
+
+  .team-identity-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
 .player-board {
   min-height: 0;
 }

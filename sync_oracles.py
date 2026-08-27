@@ -382,6 +382,14 @@ def parse_bans(row: dict, ids: dict[str, str]) -> list[str]:
     return bans
 
 
+def parse_picks(row: dict, ids: dict[str, str]) -> list[str]:
+    picks: list[str] = []
+    for n in range(1, 6):
+        raw = (row.get("pick" + str(n)) or "").strip()
+        picks.append(ids.get(norm(raw), "") if raw else "")
+    return picks
+
+
 def convert(csv_path: Path, champions_js: Path, recent_days: int = 60) -> dict:
     ids = load_id_map(champions_js)
     by_game: dict[str, list[dict[str, str]]] = defaultdict(list)
@@ -403,7 +411,9 @@ def convert(csv_path: Path, champions_js: Path, recent_days: int = 60) -> dict:
                 continue
             pos_raw = (row.get("position") or "").strip().lower()
             if pos_raw == "team":
-                team_by_game[gid][side] = team_stats(row)
+                rec = team_stats(row)
+                rec["pk"] = parse_picks(row, ids)
+                team_by_game[gid][side] = rec
                 continue
             position = POS.get(pos_raw)
             if not position:
@@ -586,6 +596,15 @@ def compact_games(by_game: dict, team_by_game: dict | None = None) -> dict:
         if not all(blue) or not all(red):
             continue
         meta = blue[0]
+        teams = (team_by_game or {}).get(gid) or {}
+
+        def side_picks(side: str) -> list[str]:
+            pk = list((teams.get(side) or {}).get("pk") or [])
+            pk = pk[:5]
+            while len(pk) < 5:
+                pk.append("")
+            return pk
+
         games.append(
             {
                 "g": gid,
@@ -604,7 +623,9 @@ def compact_games(by_game: dict, team_by_game: dict | None = None) -> dict:
                 "rp": [row["player"] for row in red],
                 "bk": [row["kda"] for row in blue],
                 "rk": [row["kda"] for row in red],
-                "x": pack_match_stats(blue, red, (team_by_game or {}).get(gid)),
+                "bpk": side_picks("Blue"),
+                "rpk": side_picks("Red"),
+                "x": pack_match_stats(blue, red, teams),
             }
         )
     games.sort(key=lambda game: game["d"], reverse=True)
