@@ -294,10 +294,47 @@ function identityChampIds(counts, enemyBans) {
   return ids;
 }
 
-function identityDetailTable(counts, wins, rolesByChamp, enemyBans, gameN) {
+function champAvailableAtSlot(game, champId, slot) {
+  const n = slot < 3 ? 3 : 5;
+  const bb = game.bb || [];
+  const rb = game.rb || [];
+  for (let i = 0; i < n; i += 1) {
+    if (bb[i] === champId || rb[i] === champId) return false;
+  }
+  return true;
+}
+
+function roleDraftSlot(game, side, roleIndex) {
+  const champs = side === "b" ? game.b : game.r;
+  const draft = side === "b" ? game.bpk : game.rpk;
+  const id = champs && champs[roleIndex];
+  if (!id || !draft) return 4;
+  const s = draft.indexOf(id);
+  return s >= 0 ? s : 4;
+}
+
+function identityAvailable(games, teamName, champIds, slots, roleIndex) {
+  const avail = {};
+  for (let i = 0; i < champIds.length; i += 1) avail[champIds[i]] = 0;
+  if (!champIds.length) return avail;
+  for (let g = 0; g < (games || []).length; g += 1) {
+    const game = games[g];
+    const side = sideOf(game, teamName);
+    if (!side) continue;
+    const slot = slots ? Math.min.apply(null, slots) : roleDraftSlot(game, side, roleIndex);
+    for (let i = 0; i < champIds.length; i += 1) {
+      const id = champIds[i];
+      if (champAvailableAtSlot(game, id, slot)) avail[id] += 1;
+    }
+  }
+  return avail;
+}
+
+function identityDetailTable(counts, wins, rolesByChamp, enemyBans, available) {
   counts = counts || {};
   wins = wins || {};
   enemyBans = enemyBans || {};
+  available = available || {};
   const ids = identityChampIds(counts, enemyBans);
   const total = countTotal(counts);
   const table = document.createElement("table");
@@ -322,9 +359,10 @@ function identityDetailTable(counts, wins, rolesByChamp, enemyBans, gameN) {
       const id = ids[i];
       const games = counts[id] || 0;
       const banned = enemyBans[id] || 0;
+      const open = available[id] || 0;
       const wr = games ? (wins[id] || 0) / games : null;
       const share = total ? games / total : null;
-      const presence = gameN ? (games + banned) / gameN : null;
+      const presence = open ? games / open : null;
       const tr = document.createElement("tr");
       const champ = document.createElement("td");
       champ.append(champCell(id));
@@ -351,7 +389,12 @@ function identityDetailTable(counts, wins, rolesByChamp, enemyBans, gameN) {
       const presCell = document.createElement("td");
       presCell.className = "num";
       presCell.textContent = fmtPct(presence);
-      presCell.title = "Picks plus opponent bans, as a share of games";
+      presCell.title =
+        "Picked in " +
+        games +
+        " of " +
+        open +
+        " games where it was still available (not banned by either team before this pick)";
       tr.append(gamesCell, wrCell, shareCell, banCell, presCell);
       tbody.append(tr);
     }
@@ -424,7 +467,7 @@ function sliceEnemyBans(counts, enemyBans) {
   return out;
 }
 
-function identityExpandable(label, counts, wins, extra, colSpan, rolesByChamp, enemyBans, gameN) {
+function identityExpandable(label, counts, wins, extra, colSpan, rolesByChamp, enemyBans, available) {
   const frag = document.createDocumentFragment();
   const summary = identityChampRow(label, counts, wins, extra);
   const bans = enemyBans || {};
@@ -446,7 +489,7 @@ function identityExpandable(label, counts, wins, extra, colSpan, rolesByChamp, e
   detail.hidden = true;
   const td = document.createElement("td");
   td.colSpan = colSpan;
-  td.append(identityDetailTable(counts, wins, rolesByChamp, bans, gameN));
+  td.append(identityDetailTable(counts, wins, rolesByChamp, bans, available));
   detail.append(td);
   function toggle(event) {
     event.preventDefault();
@@ -1165,7 +1208,7 @@ function renderTeamIdentity(rec) {
           6,
           merged.champRoles,
           sliceEnemyBans(merged.counts, stats.enemyBans),
-          stats.n
+          identityAvailable(rec.games, rec.name, Object.keys(merged.counts), group.slots)
         )
       );
     }
@@ -1196,7 +1239,7 @@ function renderTeamIdentity(rec) {
         5,
         null,
         sliceEnemyBans(stats.roles[r], stats.enemyBans),
-        stats.n
+        identityAvailable(rec.games, rec.name, Object.keys(stats.roles[r]), null, r)
       )
     );
   }
