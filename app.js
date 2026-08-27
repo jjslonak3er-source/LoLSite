@@ -36,6 +36,9 @@ const RESPONSE_ROLE_BASE = 4;
 const OE_EARLY_PHASE_PICKS = 6;
 const OE_EARLY_PICK_SCALE = 5;
 const OE_EARLY_PICK_PRIOR = 12;
+const TEAM_RECENT_DAYS = 60;
+const TEAM_RECENT_WEIGHT = 1.5;
+const TEAM_OLD_WEIGHT = 0.15;
 const ROLE_FILL_LOCK = 0.75;
 const POPULARITY_SCALE = 4.7;
 const TEAM_POP_BLEND = 1;
@@ -223,9 +226,16 @@ function buildTeamIndex() {
   teamIndex = {};
   const games = (window.RIFT_PRO_GAMES && window.RIFT_PRO_GAMES.games) || [];
   const total = games.length;
+  const newestMs = total && games[0].d ? Date.parse(games[0].d) : 0;
   for (let g = 0; g < total; g += 1) {
     const game = games[g];
-    const weight = total - g;
+    const gameMs = game.d ? Date.parse(game.d) : 0;
+    const ageDays = newestMs && gameMs ? Math.max(0, (newestMs - gameMs) / 86400000) : Infinity;
+    const weight =
+      ageDays <= TEAM_RECENT_DAYS
+        ? TEAM_RECENT_WEIGHT -
+          (TEAM_RECENT_WEIGHT - 1) * (ageDays / TEAM_RECENT_DAYS)
+        : TEAM_OLD_WEIGHT;
     const sides = [
       { name: game.bt, champs: game.b, players: game.bp, win: game.w === 1 },
       { name: game.rt, champs: game.r, players: game.rp, win: game.w === 0 },
@@ -248,18 +258,18 @@ function buildTeamIndex() {
           },
           starters: {},
         });
-      rec.n += 1;
+      rec.n += weight;
       if (game.l) rec.league = game.l;
       for (let i = 0; i < 5; i += 1) {
         const role = ROLE_KEYS[i];
         const bag = rec.roles[role];
-        bag.n += 1;
+        bag.n += weight;
         const player = side.players && side.players[i];
         const champ = side.champs && side.champs[i];
         if (player) bag.players[player] = (bag.players[player] || 0) + weight;
         if (champ) {
-          bag.champs[champ] = (bag.champs[champ] || 0) + 1;
-          if (side.win) bag.champWins[champ] = (bag.champWins[champ] || 0) + 1;
+          bag.champs[champ] = (bag.champs[champ] || 0) + weight;
+          if (side.win) bag.champWins[champ] = (bag.champWins[champ] || 0) + weight;
         }
       }
     }
@@ -277,7 +287,12 @@ function buildTeamIndex() {
 
 function orgOf(side) {
   const name = state[side] && state[side].org;
-  return (name && teamIndex[name]) || null;
+  if (name && teamIndex[name]) return teamIndex[name];
+  if (chartOpen && chartStage === "play" && side !== chartYou) {
+    const practiceName = state[chartYou] && state[chartYou].org;
+    if (practiceName && teamIndex[practiceName]) return teamIndex[practiceName];
+  }
+  return null;
 }
 
 function findTeam(raw) {
