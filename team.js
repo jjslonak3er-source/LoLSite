@@ -27,8 +27,8 @@ const teamEls = {
 
 let team = params.get("team") || "";
 let teamView = params.get("view") === "identity" ? "identity" : "roster";
-let teamSide = (params.get("side") || "all").toLowerCase();
-if (teamSide !== "blue" && teamSide !== "red") teamSide = "all";
+let teamPick = (params.get("pick") || "").toLowerCase();
+if (teamPick !== "first" && teamPick !== "second") teamPick = "all";
 let rosterSort = "role";
 let rosterDir = 1;
 
@@ -43,8 +43,9 @@ function teamSyncUrl() {
   url.searchParams.set("league", formatSel(leagues));
   url.searchParams.set("window", windowParam());
   url.searchParams.set("patch", formatSel(patches));
-  if (teamSide === "blue" || teamSide === "red") url.searchParams.set("side", teamSide);
-  else url.searchParams.delete("side");
+  if (teamPick === "first" || teamPick === "second") url.searchParams.set("pick", teamPick);
+  else url.searchParams.delete("pick");
+  url.searchParams.delete("side");
   if (team && teamView === "identity") url.searchParams.set("view", "identity");
   else url.searchParams.delete("view");
   history.replaceState({}, "", url);
@@ -76,9 +77,9 @@ function teamChips() {
     renderTeam();
   });
   if (teamEls.sides) {
-    const sideLabel = teamSide === "blue" ? "Blue" : teamSide === "red" ? "Red" : "All";
-    chipRow(teamEls.sides, ["All", "Blue", "Red"], sideLabel, function (name) {
-      teamSide = name.toLowerCase();
+    const pickLabel = teamPick === "first" ? "First pick" : teamPick === "second" ? "Second pick" : "All";
+    chipRow(teamEls.sides, ["All", "First pick", "Second pick"], pickLabel, function (name) {
+      teamPick = name === "First pick" ? "first" : name === "Second pick" ? "second" : "all";
       teamSyncUrl();
       renderTeam();
     });
@@ -95,10 +96,11 @@ function teamChips() {
   }
 }
 
-function sideWanted(key) {
-  if (teamSide === "blue") return key === "b";
-  if (teamSide === "red") return key === "r";
-  return true;
+function pickWanted(game, sideKey) {
+  if (teamPick === "all") return true;
+  const first = hadFirstPick(game, sideKey);
+  if (first == null) return false;
+  return teamPick === "first" ? first : !first;
 }
 
 function sideOf(game, name) {
@@ -130,34 +132,6 @@ function showTeamView(which) {
   if (teamEls.identityView) teamEls.identityView.hidden = !identity;
 }
 
-function blankBucket() {
-  return { n: 0, w: 0, gd: 0, gdN: 0 };
-}
-
-function addBucket(bucket, win, gd) {
-  bucket.n += 1;
-  if (win) bucket.w += 1;
-  if (gd != null && isFinite(gd)) {
-    bucket.gd += gd;
-    bucket.gdN += 1;
-  }
-}
-
-function teamGd15(game, side) {
-  const g15 = game.x && game.x.g15;
-  if (!g15) return null;
-  let sum = 0;
-  let n = 0;
-  for (let i = 0; i < 5; i += 1) {
-    if (g15[i] == null || !isFinite(g15[i])) continue;
-    sum += g15[i];
-    n += 1;
-  }
-  if (!n) return null;
-  const avg = sum / n;
-  return side === "b" ? avg : -avg;
-}
-
 function hadFirstPick(game, side) {
   const fp = game.x && game.x.fp;
   if (fp !== 0 && fp !== 1) return null;
@@ -165,8 +139,6 @@ function hadFirstPick(game, side) {
 }
 
 function teamIdentity(teamName, games) {
-  const sides = { b: blankBucket(), r: blankBucket() };
-  const picks = { first: blankBucket(), second: blankBucket() };
   const roles = [{}, {}, {}, {}, {}];
   const roleWins = [{}, {}, {}, {}, {}];
   const order = [{}, {}, {}, {}, {}];
@@ -179,10 +151,6 @@ function teamIdentity(teamName, games) {
     const side = sideOf(game, teamName);
     if (!side) continue;
     const win = side === "b" ? game.w === 1 : game.w === 0;
-    const gd = teamGd15(game, side);
-    addBucket(sides[side], win, gd);
-    const first = hadFirstPick(game, side);
-    if (first != null) addBucket(first ? picks.first : picks.second, win, gd);
     const champs = side === "b" ? game.b : game.r;
     for (let r = 0; r < 5; r += 1) {
       const id = champs && champs[r];
@@ -214,8 +182,6 @@ function teamIdentity(teamName, games) {
     }
   }
   return {
-    sides: sides,
-    picks: picks,
     roles: roles,
     roleWins: roleWins,
     order: order,
@@ -224,26 +190,6 @@ function teamIdentity(teamName, games) {
     orderN: orderN,
     bans: bans,
   };
-}
-
-function identityTiles(rec) {
-  const wrap = document.createElement("div");
-  wrap.className = "team-identity-tiles";
-  const wr = rec.n ? rec.w / rec.n : null;
-  const gd = rec.gdN ? rec.gd / rec.gdN : null;
-  wrap.append(tile("Games", String(rec.n)));
-  wrap.append(tile("WR", fmtPct(wr), wr >= 0.5 ? "up" : wr != null ? "down" : ""));
-  wrap.append(tile("GD@15", gd == null ? "—" : fmtDiff(gd), gd > 0 ? "up" : gd < 0 ? "down" : ""));
-  return wrap;
-}
-
-function identityBlock(label, rec) {
-  const wrap = document.createElement("div");
-  wrap.className = "team-identity-block";
-  const h = document.createElement("h5");
-  h.textContent = label;
-  wrap.append(h, identityTiles(rec));
-  return wrap;
 }
 
 function identityTable(title, headers, rows) {
@@ -310,7 +256,7 @@ function collectTeams() {
     for (let s = 0; s < 2; s += 1) {
       const side = sides[s];
       if (!side.team) continue;
-      if (!sideWanted(side.key)) continue;
+      if (!pickWanted(game, side.key)) continue;
       const rec = map[side.team] || (map[side.team] = {
         name: side.team,
         leagues: {},
@@ -853,7 +799,7 @@ function renderTeamDetail() {
             encodeURIComponent(windowParam()) +
             "&patch=" +
             encodeURIComponent(formatSel(patches)) +
-            (teamSide === "blue" || teamSide === "red" ? "&side=" + teamSide : "") +
+            (teamPick === "first" || teamPick === "second" ? "&pick=" + teamPick : "") +
             (teamView === "identity" ? "&view=identity" : "")
         );
     });
@@ -954,20 +900,6 @@ function renderTeamIdentity(rec) {
     body.append(empty);
     return;
   }
-
-  const grid = document.createElement("div");
-  grid.className = "team-identity-grid";
-  const sideCol = document.createElement("div");
-  sideCol.className = "team-identity-pair";
-  if (stats.sides.b.n) sideCol.append(identityBlock("Blue side", stats.sides.b));
-  if (stats.sides.r.n) sideCol.append(identityBlock("Red side", stats.sides.r));
-  const pickCol = document.createElement("div");
-  pickCol.className = "team-identity-pair";
-  if (stats.picks.first.n) pickCol.append(identityBlock("First pick", stats.picks.first));
-  if (stats.picks.second.n) pickCol.append(identityBlock("Second pick", stats.picks.second));
-  if (sideCol.childNodes.length) grid.append(sideCol);
-  if (pickCol.childNodes.length) grid.append(pickCol);
-  if (grid.childNodes.length) body.append(grid);
 
   if (stats.orderN) {
     const orderRows = [];
